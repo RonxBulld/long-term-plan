@@ -11,8 +11,7 @@ import {
   searchTasks,
   taskAdd,
   taskDelete,
-  taskRename,
-  taskSetStatus,
+  taskUpdate,
   validatePlanDoc,
 } from './todo/api.js';
 
@@ -231,64 +230,40 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
   );
 
   server.registerTool(
-    'task.setStatus',
+    'task.update',
     {
-      title: 'Set task status',
+      title: 'Update a task',
       description:
-        'Update a task status in-place (minimal diff). If taskId is omitted, you must set allowDefaultTarget=true and provide ifMatch; the server will target the current doing task, else the first unfinished task.',
-      inputSchema: {
-        planId: z.string().optional(),
-        taskId: z.string().optional(),
-        status: z.enum(['todo', 'doing', 'done']),
-        allowDefaultTarget: z.boolean().optional(),
-        ifMatch: z.string().optional(),
-      },
-      outputSchema: { etag: z.string(), taskId: z.string().optional() },
+        'Update a task in-place (minimal diff). You can update status and/or title. If taskId is omitted, you must set allowDefaultTarget=true and provide ifMatch; the server will target the current doing task, else the first unfinished task.',
+      inputSchema: z
+        .object({
+          planId: z.string().optional(),
+          taskId: z.string().optional(),
+          status: z.enum(['todo', 'doing', 'done']).optional(),
+          title: z.string().optional(),
+          allowDefaultTarget: z.boolean().optional(),
+          ifMatch: z.string().optional(),
+        })
+        .refine((value) => value.status !== undefined || value.title !== undefined, {
+          message: 'At least one of status or title is required',
+        }),
+      outputSchema: { etag: z.string(), taskId: z.string() },
     },
-    async ({ planId, taskId, status, allowDefaultTarget, ifMatch }) => {
+    async ({ planId, taskId, status, title, allowDefaultTarget, ifMatch }) => {
       const { taskId: resolvedTaskId, etag } = await withDefaultPlanId(planId, (resolvedPlanId) =>
-        taskSetStatus(config, {
+        taskUpdate(config, {
           planId: resolvedPlanId,
           taskId,
           status,
-          allowDefaultTarget,
-          ifMatch,
-        })
-      );
-      return {
-        content: [{ type: 'text', text: JSON.stringify({ taskId: resolvedTaskId, etag }, null, 2) }],
-        structuredContent: { taskId: resolvedTaskId, etag },
-      };
-    }
-  );
-
-  server.registerTool(
-    'task.rename',
-    {
-      title: 'Rename a task',
-      description:
-        'Update a task title in-place (minimal diff). If taskId is omitted, you must set allowDefaultTarget=true and provide ifMatch; the server will target the current doing task, else the first unfinished task.',
-      inputSchema: {
-        planId: z.string().optional(),
-        taskId: z.string().optional(),
-        title: z.string(),
-        allowDefaultTarget: z.boolean().optional(),
-        ifMatch: z.string().optional(),
-      },
-      outputSchema: { etag: z.string(), taskId: z.string().optional() },
-    },
-    async ({ planId, taskId, title, allowDefaultTarget, ifMatch }) => {
-      const { taskId: resolvedTaskId, etag } = await withDefaultPlanId(planId, (resolvedPlanId) =>
-        taskRename(config, {
-          planId: resolvedPlanId,
-          taskId,
           title,
           allowDefaultTarget,
           ifMatch,
         })
       );
       return {
-        content: [{ type: 'text', text: JSON.stringify({ taskId: resolvedTaskId, etag }, null, 2) }],
+        content: [
+          { type: 'text', text: JSON.stringify({ taskId: resolvedTaskId, etag }, null, 2) },
+        ],
         structuredContent: { taskId: resolvedTaskId, etag },
       };
     }

@@ -373,24 +373,29 @@ export async function taskAdd(
   return { taskId, etag: sha256Hex(newText) };
 }
 
-export interface TaskSetStatusOptions {
+export interface TaskUpdateOptions {
   planId: string;
   taskId?: string;
-  status: TaskStatus;
+  title?: string;
+  status?: TaskStatus;
   ifMatch?: string;
   allowDefaultTarget?: boolean;
 }
 
 /**
- * Update a task status in-place and return the new etag.
+ * Update a task in-place and return the new etag.
  *
- * If the status is already set, the document is left untouched and we return
- * the current etag.
+ * - `status` and `title` are both optional, but at least one must be provided.
+ * - If `taskId` is omitted, callers must set `allowDefaultTarget=true` and provide `ifMatch`.
+ * - Default targeting prefers the current `doing` task, else the first unfinished task.
  */
-export async function taskSetStatus(
+export async function taskUpdate(
   config: LongTermPlanConfig,
-  options: TaskSetStatusOptions
+  options: TaskUpdateOptions
 ): Promise<{ taskId: string; etag: string }> {
+  if (options.status === undefined && options.title === undefined) {
+    throw new Error('At least one of status or title is required');
+  }
   if (!options.taskId && !options.allowDefaultTarget) {
     throw new Error('taskId is required unless allowDefaultTarget=true');
   }
@@ -410,50 +415,24 @@ export async function taskSetStatus(
     taskId = selectDefaultTaskId(parsed.plan.rootTasks, { mode: 'write' }).taskId;
   }
 
-  const edit = applySetStatus(text, taskId, options.status);
-  if (!edit.changed) return { taskId, etag };
-  await writeFileAtomic(absolutePath, edit.newText);
-  return { taskId, etag: sha256Hex(edit.newText) };
-}
+  let newText = text;
+  let changed = false;
 
-export interface TaskRenameOptions {
-  planId: string;
-  taskId?: string;
-  title: string;
-  ifMatch?: string;
-  allowDefaultTarget?: boolean;
-}
-
-/**
- * Rename a task title in-place and return the new etag.
- */
-export async function taskRename(
-  config: LongTermPlanConfig,
-  options: TaskRenameOptions
-): Promise<{ taskId: string; etag: string }> {
-  if (!options.taskId && !options.allowDefaultTarget) {
-    throw new Error('taskId is required unless allowDefaultTarget=true');
-  }
-  if (!options.taskId && !options.ifMatch) {
-    throw new Error('ifMatch is required when taskId is omitted');
+  if (options.status !== undefined) {
+    const edit = applySetStatus(newText, taskId, options.status);
+    newText = edit.newText;
+    changed = changed || edit.changed;
   }
 
-  const { absolutePath, text, etag } = await readPlanFile(config, options.planId);
-  requireIfMatch(etag, options.ifMatch);
-
-  let taskId = options.taskId;
-  if (taskId) {
-    assertSafeId('taskId', taskId);
-  } else {
-    const parsed = parsePlanMarkdown(text);
-    if (!parsed.ok || !parsed.plan) throw new Error('Failed to parse plan');
-    taskId = selectDefaultTaskId(parsed.plan.rootTasks, { mode: 'write' }).taskId;
+  if (options.title !== undefined) {
+    const edit = applyRename(newText, taskId, options.title);
+    newText = edit.newText;
+    changed = changed || edit.changed;
   }
 
-  const edit = applyRename(text, taskId, options.title);
-  if (!edit.changed) return { taskId, etag };
-  await writeFileAtomic(absolutePath, edit.newText);
-  return { taskId, etag: sha256Hex(edit.newText) };
+  if (!changed) return { taskId, etag };
+  await writeFileAtomic(absolutePath, newText);
+  return { taskId, etag: sha256Hex(newText) };
 }
 
 export interface TaskDeleteOptions {

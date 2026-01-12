@@ -65,8 +65,7 @@ test('MCP integration: create plan, mutate tasks, validate final state', async (
     assert.ok(toolNames.has('plan.create'));
     assert.ok(toolNames.has('plan.get'));
     assert.ok(toolNames.has('task.add'));
-    assert.ok(toolNames.has('task.setStatus'));
-    assert.ok(toolNames.has('task.rename'));
+    assert.ok(toolNames.has('task.update'));
     assert.ok(toolNames.has('task.delete'));
     assert.ok(toolNames.has('doc.validate'));
 
@@ -98,22 +97,16 @@ test('MCP integration: create plan, mutate tasks, validate final state', async (
     assert.match(fileTextAfterAdd, /<!-- long-term-plan:format=v1 -->/);
     assert.match(fileTextAfterAdd, new RegExp(`<!-- long-term-plan:id=${parentTaskId} -->`));
 
-    // Mutate state using `ifMatch` for optimistic concurrency.
-    const started = await callToolOk(client, 'task.setStatus', {
+    // Mutate status + title using `ifMatch` for optimistic concurrency.
+    const updated = await callToolOk(client, 'task.update', {
       planId: 'demo',
       taskId: parentTaskId,
       status: 'doing',
-      ifMatch: etag,
-    });
-    etag = started.structuredContent.etag;
-
-    const renamed = await callToolOk(client, 'task.rename', {
-      planId: 'demo',
-      taskId: parentTaskId,
       title: 'Task A (renamed)',
       ifMatch: etag,
     });
-    etag = renamed.structuredContent.etag;
+    assert.equal(updated.structuredContent.taskId, parentTaskId);
+    etag = updated.structuredContent.etag;
 
     // Add a child task nested under the parent block.
     const childAdded = await callToolOk(client, 'task.add', {

@@ -32,12 +32,12 @@ node dist/cli.js --root . --plans .long-term-plan
 
 约定：默认活动计划文件为 `.long-term-plan/active-plan.md`（`planId=active-plan`）。调用 MCP tools 时若省略 `planId`，默认操作该 plan；若文件不存在将自动创建。
 调用 `task.get` 时若省略 `taskId`，默认返回第一个进行中（`doing`）任务；若没有进行中任务，则返回从上往下第一个未完成任务。
-调用 `task.setStatus` / `task.rename` 时也可省略 `taskId`，但必须同时提供 `ifMatch` 并设置 `allowDefaultTarget=true`（避免误改）。
+调用 `task.update` 时也可省略 `taskId`，但必须同时提供 `ifMatch` 并设置 `allowDefaultTarget=true`（避免误改）。
 
 ## MCP Tools
 
 - `plan.list` / `plan.get` / `plan.create`
-- `task.get` / `task.add` / `task.setStatus` / `task.rename` / `task.delete` / `task.search`
+- `task.get` / `task.add` / `task.update` / `task.delete` / `task.search`
 - `doc.validate` / `doc.repair`
 
 ## 重要行为保证

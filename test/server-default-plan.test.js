@@ -36,23 +36,11 @@ test('MCP tools accept omitted planId (defaults to active-plan)', () => {
     true
   );
   assert.equal(
-    getTool(server, 'task.setStatus').inputSchema.safeParse({ taskId: 't_a', status: 'todo' })
-      .success,
+    getTool(server, 'task.update').inputSchema.safeParse({ taskId: 't_a', status: 'todo' }).success,
     true
   );
   assert.equal(
-    getTool(server, 'task.setStatus').inputSchema.safeParse({
-      status: 'todo',
-      allowDefaultTarget: true,
-    }).success,
-    true
-  );
-  assert.equal(
-    getTool(server, 'task.rename').inputSchema.safeParse({ taskId: 't_a', title: 'new' }).success,
-    true
-  );
-  assert.equal(
-    getTool(server, 'task.rename').inputSchema.safeParse({
+    getTool(server, 'task.update').inputSchema.safeParse({
       title: 'new',
       allowDefaultTarget: true,
     }).success,
