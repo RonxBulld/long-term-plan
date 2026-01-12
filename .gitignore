@@ -5,8 +5,11 @@ node_modules/
 dist/
 *.tsbuildinfo
 
-# Local tool state / caches
-.long-term-plan/
+# Tool cache only (plans live in `.long-term-plan/`)
+.long-term-plan/index.json
+.long-term-plan/.cache/
+.long-term-plan/*.tmp.*
+.tmp/
 
 # Logs
 npm-debug.log*

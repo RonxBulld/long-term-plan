@@ -16,9 +16,7 @@ import {
   validatePlanDoc,
 } from './todo/api.js';
 
-export function createServer(
-  config: LongTermPlanConfig
-): { run: () => Promise<void> } {
+export function createMcpServer(config: LongTermPlanConfig): McpServer {
   const server = new McpServer({ name: 'long-term-plan-mcp', version: '0.1.0' });
 
   server.registerTool(
@@ -325,10 +323,11 @@ export function createServer(
     }
   );
 
-  return {
-    async run(): Promise<void> {
-      const transport = new StdioServerTransport();
-      await server.connect(transport);
-    },
-  };
+  return server;
+}
+
+export async function runStdioServer(config: LongTermPlanConfig): Promise<void> {
+  const server = createMcpServer(config);
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
 }

@@ -70,6 +70,9 @@ export function parsePlanMarkdown(text: string): ParsePlanResult {
   const warnings: Diagnostic[] = [];
 
   const lines = text.split(/\r?\n/);
+  if (text.endsWith('\n') && lines.length > 0 && lines[lines.length - 1] === '') {
+    lines.pop();
+  }
   const headerLine = lines
     .slice(0, Math.min(lines.length, 30))
     .findIndex((line) => line.includes(LONG_TERM_PLAN_FORMAT_HEADER));

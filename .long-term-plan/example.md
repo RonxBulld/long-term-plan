@@ -12,3 +12,4 @@
 
 ### Sprint 1
 - [√] 定义 long-term-plan-md v1 <!-- long-term-plan:id=t_example_4 -->
+

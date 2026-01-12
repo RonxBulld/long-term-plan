@@ -1,4 +1,4 @@
-# long-term-todo：MCP Todo 管理小工具设计方案（v0）
+# long-term-plan：MCP Todo 管理小工具设计方案（v0）
 
 ## 1. 目标与约束
 
@@ -22,15 +22,14 @@
 ## 2. 仓库与文件布局（建议）
 
 ```
-./plans/                     # 计划文件目录（可配置）
+./.long-term-plan/           # 计划文件目录（默认 + 推荐）
   2026Q1.md
   product-roadmap.md
-./.long-term-plan/           # 仅工具使用（可忽略/可 gitignore）
-  config.json                # 根目录配置（可选）
-  index.json                 # 可选：加速索引缓存（可丢弃重建）
+  config.json                # 可选：工具配置（是否提交到 git 由团队决定）
+  index.json                 # 可选：加速索引缓存（建议 gitignore）
 ```
 
-> 约定：所有写操作默认只允许发生在 `root` 下（防路径穿越）；并且只写 `plansDir` 目录与 `.long-term-plan/`。
+> 约定：所有写操作默认只允许发生在 `root` 下（防路径穿越）；并且只写 `plansDir`（默认 `.long-term-plan/`）。
 
 ## 3. Markdown 数据格式（long-term-plan-md v1）
 
@@ -125,13 +124,13 @@
 ### 5.1 命令形式（建议）
 - 包名（示例）：`long-term-plan-mcp`
 - 启动命令：
-  - `npx long-term-plan-mcp --root . --plans plans`
+  - `npx long-term-plan-mcp --root . --plans .long-term-plan`（默认可省略 `--plans`）
 - 传输：stdio（符合 MCP 常见部署方式）
 
 ### 5.2 配置加载优先级
 1) CLI 参数
 2) `.long-term-plan/config.json`
-3) 默认值：`root=process.cwd()`，`plansDir=plans`
+3) 默认值：`root=process.cwd()`，`plansDir=.long-term-plan`
 
 ## 6. MCP 工具接口（CRUD + 校验）
 
@@ -147,7 +146,7 @@ PlanSummary（示例）
 {
   "planId": "product-roadmap",
   "title": "Product Roadmap",
-  "path": "plans/product-roadmap.md",
+  "path": ".long-term-plan/product-roadmap.md",
   "stats": { "total": 120, "todo": 80, "doing": 3, "done": 37 }
 }
 ```
@@ -194,4 +193,4 @@ RepairAction（建议先做最小集合）
 ## 9. 测试建议（保证可测）
 - `parse(text) -> DocModel` 纯函数：覆盖缩进、章节、混合正文、非法行的测试夹具。
 - `applyEdit(text, op) -> { newText, changedRanges }`：断言最小 diff（只改目标行）。
-- fixtures/golden：用真实的 `plans/*.md` 样例做快照测试。
+- fixtures/golden：用真实的 `.long-term-plan/*.md` 样例做快照测试。

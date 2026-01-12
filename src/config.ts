@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { DEFAULT_PLANS_DIR } from './todo/constants.js';
 
 export interface LongTermPlanConfig {
   rootDir: string;
@@ -12,7 +13,7 @@ export function loadConfigFromArgs(
   const args = [...argv];
 
   let rootDir = cwd;
-  let plansDir = 'plans';
+  let plansDir = DEFAULT_PLANS_DIR;
 
   while (args.length > 0) {
     const flag = args.shift();

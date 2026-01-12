@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { createServer } from './server.js';
+import { runStdioServer } from './server.js';
 import { loadConfigFromArgs } from './config.js';
 
 function printHelp(): void {
@@ -14,7 +14,7 @@ function printHelp(): void {
       '',
       'Options:',
       '  --root   Root directory (default: cwd)',
-      '  --plans  Plans directory relative to root (default: plans)',
+      '  --plans  Plans directory relative to root (default: .long-term-plan)',
       '  --help   Show help',
       '',
     ].join('\n')
@@ -52,8 +52,7 @@ async function main(): Promise<void> {
   }
 
   const config = loadConfigFromArgs(argv, process.cwd());
-  const server = createServer(config);
-  await server.run();
+  await runStdioServer(config);
 }
 
 await main();

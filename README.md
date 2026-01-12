@@ -7,7 +7,7 @@
 ```bash
 npm install
 npm run build
-node dist/cli.js --root . --plans plans
+node dist/cli.js --root . --plans .long-term-plan
 ```
 
 > 作为 MCP server 通常由宿主（IDE/Agent）启动；本项目默认使用 stdio transport。
@@ -28,7 +28,7 @@ node dist/cli.js --root . --plans plans
 - [√] 已完成 <!-- long-term-plan:id=t_zzz -->
 ```
 
-支持层级任务（2 空格缩进）与章节（Markdown headings）。
+支持层级任务（2 空格缩进）与章节（Markdown headings）。默认计划文件目录为 `.long-term-plan/`（可用 `--plans` 覆盖）。
 
 ## MCP Tools
 
