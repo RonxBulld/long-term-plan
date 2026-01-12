@@ -16,8 +16,46 @@ import {
   validatePlanDoc,
 } from './todo/api.js';
 
+const DEFAULT_ACTIVE_PLAN_ID = 'active-plan';
+const DEFAULT_ACTIVE_PLAN_TITLE = 'Active Plan';
+
 export function createMcpServer(config: LongTermPlanConfig): McpServer {
   const server = new McpServer({ name: 'long-term-plan-mcp', version: '0.1.0' });
+
+  function isEnoent(error: unknown): boolean {
+    return (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
+  }
+
+  async function ensureActivePlanExists(): Promise<void> {
+    try {
+      await createPlan(config, {
+        planId: DEFAULT_ACTIVE_PLAN_ID,
+        title: DEFAULT_ACTIVE_PLAN_TITLE,
+        template: 'basic',
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Plan already exists:')) {
+        return;
+      }
+      throw error;
+    }
+  }
+
+  async function withDefaultPlanId<T>(
+    planId: string | undefined,
+    fn: (resolvedPlanId: string) => Promise<T>
+  ): Promise<T> {
+    const resolvedPlanId = planId ?? DEFAULT_ACTIVE_PLAN_ID;
+    try {
+      return await fn(resolvedPlanId);
+    } catch (error) {
+      if (planId === undefined && isEnoent(error)) {
+        await ensureActivePlanExists();
+        return await fn(resolvedPlanId);
+      }
+      throw error;
+    }
+  }
 
   server.registerTool(
     'plan.list',
@@ -57,9 +95,9 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
     {
       title: 'Get a plan',
       description:
-        'Read and parse a plan markdown file. Returns tasks in tree or flat view.',
+        `Read and parse a plan markdown file. Returns tasks in tree or flat view. If planId is omitted, defaults to "${DEFAULT_ACTIVE_PLAN_ID}".`,
       inputSchema: {
-        planId: z.string(),
+        planId: z.string().optional(),
         view: z.enum(['tree', 'flat']).optional(),
       },
       outputSchema: {
@@ -68,7 +106,9 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
       },
     },
     async ({ planId, view }) => {
-      const { plan, etag } = await getPlan(config, { planId, view });
+      const { plan, etag } = await withDefaultPlanId(planId, (resolvedPlanId) =>
+        getPlan(config, { planId: resolvedPlanId, view })
+      );
       return {
         content: [{ type: 'text', text: JSON.stringify({ plan, etag }, null, 2) }],
         structuredContent: { plan, etag },
@@ -104,9 +144,9 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
     'task.get',
     {
       title: 'Get a task',
-      description: 'Get a task by id from a plan.',
+      description: `Get a task by id from a plan. If planId is omitted, defaults to "${DEFAULT_ACTIVE_PLAN_ID}".`,
       inputSchema: {
-        planId: z.string(),
+        planId: z.string().optional(),
         taskId: z.string(),
       },
       outputSchema: {
@@ -115,7 +155,9 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
       },
     },
     async ({ planId, taskId }) => {
-      const { task, etag } = await getTask(config, { planId, taskId });
+      const { task, etag } = await withDefaultPlanId(planId, (resolvedPlanId) =>
+        getTask(config, { planId: resolvedPlanId, taskId })
+      );
       return {
         content: [{ type: 'text', text: JSON.stringify({ task, etag }, null, 2) }],
         structuredContent: { task, etag },
@@ -127,9 +169,9 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
     'task.add',
     {
       title: 'Add a task',
-      description: 'Add a task to a plan (optionally under a section or parent task).',
+      description: `Add a task to a plan (optionally under a section or parent task). If planId is omitted, defaults to "${DEFAULT_ACTIVE_PLAN_ID}".`,
       inputSchema: {
-        planId: z.string(),
+        planId: z.string().optional(),
         title: z.string(),
         status: z.enum(['todo', 'doing', 'done']).optional(),
         sectionPath: z.array(z.string()).optional(),
@@ -142,14 +184,16 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
       },
     },
     async ({ planId, title, status, sectionPath, parentTaskId, ifMatch }) => {
-      const { taskId, etag } = await taskAdd(config, {
-        planId,
-        title,
-        status,
-        sectionPath,
-        parentTaskId,
-        ifMatch,
-      });
+      const { taskId, etag } = await withDefaultPlanId(planId, (resolvedPlanId) =>
+        taskAdd(config, {
+          planId: resolvedPlanId,
+          title,
+          status,
+          sectionPath,
+          parentTaskId,
+          ifMatch,
+        })
+      );
       return {
         content: [{ type: 'text', text: JSON.stringify({ taskId, etag }, null, 2) }],
         structuredContent: { taskId, etag },
@@ -163,7 +207,7 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
       title: 'Set task status',
       description: 'Update a task status in-place (minimal diff).',
       inputSchema: {
-        planId: z.string(),
+        planId: z.string().optional(),
         taskId: z.string(),
         status: z.enum(['todo', 'doing', 'done']),
         ifMatch: z.string().optional(),
@@ -171,7 +215,9 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
       outputSchema: { etag: z.string() },
     },
     async ({ planId, taskId, status, ifMatch }) => {
-      const { etag } = await taskSetStatus(config, { planId, taskId, status, ifMatch });
+      const { etag } = await withDefaultPlanId(planId, (resolvedPlanId) =>
+        taskSetStatus(config, { planId: resolvedPlanId, taskId, status, ifMatch })
+      );
       return {
         content: [{ type: 'text', text: JSON.stringify({ etag }, null, 2) }],
         structuredContent: { etag },
@@ -185,7 +231,7 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
       title: 'Rename a task',
       description: 'Update a task title in-place (minimal diff).',
       inputSchema: {
-        planId: z.string(),
+        planId: z.string().optional(),
         taskId: z.string(),
         title: z.string(),
         ifMatch: z.string().optional(),
@@ -193,7 +239,9 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
       outputSchema: { etag: z.string() },
     },
     async ({ planId, taskId, title, ifMatch }) => {
-      const { etag } = await taskRename(config, { planId, taskId, title, ifMatch });
+      const { etag } = await withDefaultPlanId(planId, (resolvedPlanId) =>
+        taskRename(config, { planId: resolvedPlanId, taskId, title, ifMatch })
+      );
       return {
         content: [{ type: 'text', text: JSON.stringify({ etag }, null, 2) }],
         structuredContent: { etag },
@@ -207,14 +255,16 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
       title: 'Delete a task',
       description: 'Delete a task (and its indented block) from a plan.',
       inputSchema: {
-        planId: z.string(),
+        planId: z.string().optional(),
         taskId: z.string(),
         ifMatch: z.string().optional(),
       },
       outputSchema: { etag: z.string() },
     },
     async ({ planId, taskId, ifMatch }) => {
-      const { etag } = await taskDelete(config, { planId, taskId, ifMatch });
+      const { etag } = await withDefaultPlanId(planId, (resolvedPlanId) =>
+        taskDelete(config, { planId: resolvedPlanId, taskId, ifMatch })
+      );
       return {
         content: [{ type: 'text', text: JSON.stringify({ etag }, null, 2) }],
         structuredContent: { etag },
@@ -259,9 +309,9 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
     {
       title: 'Validate plan docs',
       description:
-        'Validate a plan markdown file against long-term-plan-md v1 format. Returns diagnostics.',
+        `Validate a plan markdown file against long-term-plan-md v1 format. Returns diagnostics. If planId is omitted, defaults to "${DEFAULT_ACTIVE_PLAN_ID}".`,
       inputSchema: {
-        planId: z.string(),
+        planId: z.string().optional(),
       },
       outputSchema: {
         errors: z.array(
@@ -281,7 +331,9 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
       },
     },
     async ({ planId }) => {
-      const { errors, warnings } = await validatePlanDoc(config, { planId });
+      const { errors, warnings } = await withDefaultPlanId(planId, (resolvedPlanId) =>
+        validatePlanDoc(config, { planId: resolvedPlanId })
+      );
       return {
         content: [{ type: 'text', text: JSON.stringify({ errors, warnings }, null, 2) }],
         structuredContent: { errors, warnings },
@@ -294,9 +346,9 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
     {
       title: 'Repair plan docs',
       description:
-        'Attempt a safe, explicit repair of a plan markdown file (e.g., add header, add missing ids).',
+        `Attempt a safe, explicit repair of a plan markdown file (e.g., add header, add missing ids). If planId is omitted, defaults to "${DEFAULT_ACTIVE_PLAN_ID}".`,
       inputSchema: {
-        planId: z.string(),
+        planId: z.string().optional(),
         actions: z.array(z.enum(['addFormatHeader', 'addMissingIds'])),
         dryRun: z.boolean().optional(),
         ifMatch: z.string().optional(),
@@ -310,12 +362,14 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
       },
     },
     async ({ planId, actions, dryRun, ifMatch }) => {
-      const { etag, applied } = await repairPlanDoc(config, {
-        planId,
-        actions,
-        dryRun,
-        ifMatch,
-      });
+      const { etag, applied } = await withDefaultPlanId(planId, (resolvedPlanId) =>
+        repairPlanDoc(config, {
+          planId: resolvedPlanId,
+          actions,
+          dryRun,
+          ifMatch,
+        })
+      );
       return {
         content: [{ type: 'text', text: JSON.stringify({ etag, applied }, null, 2) }],
         structuredContent: { etag, applied },
