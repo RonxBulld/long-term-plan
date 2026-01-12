@@ -30,6 +30,8 @@ node dist/cli.js --root . --plans .long-term-plan
 
 支持层级任务（2 空格缩进）与章节（Markdown headings）。默认计划文件目录为 `.long-term-plan/`（可用 `--plans` 覆盖）。
 
+约定：默认活动计划文件为 `.long-term-plan/active-plan.md`（`planId=active-plan`）。调用 MCP tools 时若省略 `planId`，默认操作该 plan；若文件不存在将自动创建。
+
 ## MCP Tools
 
 - `plan.list` / `plan.get` / `plan.create`

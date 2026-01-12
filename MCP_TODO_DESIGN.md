@@ -29,6 +29,8 @@
   index.json                 # 可选：加速索引缓存（建议 gitignore）
 ```
 
+> 约定：`active-plan.md` 作为默认活动计划（`planId=active-plan`）。调用 plan/task/doc 工具时若省略 `planId`，默认操作该 plan；若文件不存在将自动创建（仅对省略 `planId` 生效，显式 `planId` 不会自动创建以避免拼写误创建）。
+
 > 约定：所有写操作默认只允许发生在 `root` 下（防路径穿越）；并且只写 `plansDir`（默认 `.long-term-plan/`）。
 
 ## 3. Markdown 数据格式（long-term-plan-md v1）
