@@ -1,3 +1,13 @@
+/**
+ * Full MCP integration test using the in-memory transport.
+ *
+ * This test exercises the "real" boundary:
+ * - client lists tools
+ * - client calls tools with arguments
+ * - server reads/writes plan markdown files on disk
+ *
+ * It also checks optimistic concurrency via `ifMatch` etags.
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -9,6 +19,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../dist/server.js';
 
 function toolText(result) {
+  // The MCP SDK returns tool output as an array of content items; we join all text.
   return (result.content ?? [])
     .filter((c) => c?.type === 'text' && typeof c.text === 'string')
     .map((c) => c.text)
@@ -16,6 +27,7 @@ function toolText(result) {
 }
 
 async function callToolOk(client, name, args) {
+  // Helper that throws a richer error message if a tool call fails.
   const result = await client.callTool({ name, arguments: args });
   if (result.isError) {
     throw new Error(`Tool failed (${name}): ${toolText(result)}`);
@@ -24,6 +36,7 @@ async function callToolOk(client, name, args) {
 }
 
 async function createTempRoot() {
+  // Keep temp dirs under `.tmp/` so they are easy to locate/clean locally.
   const baseDir = resolve('.tmp');
   await mkdir(baseDir, { recursive: true });
   const rootDir = await mkdtemp(join(baseDir, 'long-term-plan-'));
@@ -46,6 +59,7 @@ test('MCP integration: create plan, mutate tasks, validate final state', async (
   await server.connect(serverTransport);
   await client.connect(clientTransport);
   try {
+    // Sanity-check that key tools are discoverable via `listTools`.
     const toolsList = await client.listTools();
     const toolNames = new Set((toolsList?.tools ?? []).map((t) => t.name));
     assert.ok(toolNames.has('plan.create'));
@@ -63,11 +77,13 @@ test('MCP integration: create plan, mutate tasks, validate final state', async (
     });
     assert.deepEqual(created.structuredContent, { planId: 'demo', path: '.long-term-plan/demo.md' });
 
+    // Start from an empty plan.
     const initial = await callToolOk(client, 'plan.get', { planId: 'demo', view: 'tree' });
     assert.equal(initial.structuredContent.plan.title, 'Demo Plan');
     assert.equal(initial.structuredContent.plan.stats.total, 0);
     let etag = initial.structuredContent.etag;
 
+    // Add a task under a section.
     const added = await callToolOk(client, 'task.add', {
       planId: 'demo',
       title: 'Task A',
@@ -82,6 +98,7 @@ test('MCP integration: create plan, mutate tasks, validate final state', async (
     assert.match(fileTextAfterAdd, /<!-- long-term-plan:format=v1 -->/);
     assert.match(fileTextAfterAdd, new RegExp(`<!-- long-term-plan:id=${parentTaskId} -->`));
 
+    // Mutate state using `ifMatch` for optimistic concurrency.
     const started = await callToolOk(client, 'task.setStatus', {
       planId: 'demo',
       taskId: parentTaskId,
@@ -98,6 +115,7 @@ test('MCP integration: create plan, mutate tasks, validate final state', async (
     });
     etag = renamed.structuredContent.etag;
 
+    // Add a child task nested under the parent block.
     const childAdded = await callToolOk(client, 'task.add', {
       planId: 'demo',
       title: 'Child task',
@@ -108,6 +126,7 @@ test('MCP integration: create plan, mutate tasks, validate final state', async (
     assert.match(childTaskId, /^t_[a-f0-9]{32}$/);
     etag = childAdded.structuredContent.etag;
 
+    // Fetch the plan and assert the task tree shape.
     const afterMutations = await callToolOk(client, 'plan.get', { planId: 'demo', view: 'tree' });
     assert.equal(afterMutations.structuredContent.plan.stats.total, 2);
     assert.equal(afterMutations.structuredContent.plan.stats.doing, 1);
@@ -121,6 +140,7 @@ test('MCP integration: create plan, mutate tasks, validate final state', async (
     assert.equal(tasks[0].children[0].id, childTaskId);
     assert.equal(tasks[0].children[0].title, 'Child task');
 
+    // Deleting the parent task should delete the entire nested block.
     const deleted = await callToolOk(client, 'task.delete', {
       planId: 'demo',
       taskId: parentTaskId,
@@ -131,9 +151,11 @@ test('MCP integration: create plan, mutate tasks, validate final state', async (
     const afterDelete = await callToolOk(client, 'plan.get', { planId: 'demo', view: 'tree' });
     assert.equal(afterDelete.structuredContent.plan.stats.total, 0);
 
+    // A valid doc should produce 0 validation errors.
     const validate = await callToolOk(client, 'doc.validate', { planId: 'demo' });
     assert.equal(validate.structuredContent.errors.length, 0);
 
+    // A mismatched etag should fail with a conflict error.
     const conflict = await client.callTool({
       name: 'task.add',
       arguments: { planId: 'demo', title: 'should-conflict', ifMatch: 'deadbeef' },

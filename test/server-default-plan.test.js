@@ -1,3 +1,11 @@
+/**
+ * Server wiring tests (no transport).
+ *
+ * These tests ensure:
+ * - tools are registered with the expected names
+ * - `planId` is optional in tool schemas where the server provides a default
+ * - the "default plan auto-create" behavior works end-to-end on disk
+ */
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -6,6 +14,8 @@ import test from 'node:test';
 import { createMcpServer } from '../dist/server.js';
 
 function getTool(server, name) {
+  // `_registeredTools` is an internal detail of the MCP server implementation,
+  // but using it here keeps tests fast (no transport needed for schema checks).
   const tool = server?._registeredTools?.[name];
   assert.ok(tool, `tool ${name} should be registered`);
   return tool;
@@ -14,6 +24,7 @@ function getTool(server, name) {
 test('MCP tools accept omitted planId (defaults to active-plan)', () => {
   const server = createMcpServer({ rootDir: '.', plansDir: '.long-term-plan' });
 
+  // Schemas should accept omitted planId for all defaultable tools.
   assert.equal(getTool(server, 'plan.get').inputSchema.safeParse({}).success, true);
   assert.equal(
     getTool(server, 'task.get').inputSchema.safeParse({ taskId: 't_a' }).success,
@@ -44,6 +55,7 @@ test('MCP tools accept omitted planId (defaults to active-plan)', () => {
 });
 
 test('task.add without planId auto-creates active-plan.md', async () => {
+  // Use a temp directory so we can assert on actual files without polluting the repo.
   const rootDir = await mkdtemp(join(process.cwd(), '.tmp-long-term-plan-'));
   try {
     const server = createMcpServer({ rootDir, plansDir: '.long-term-plan' });
@@ -54,6 +66,7 @@ test('task.add without planId auto-creates active-plan.md', async () => {
     const planPath = join(rootDir, '.long-term-plan', 'active-plan.md');
     const text = await readFile(planPath, 'utf8');
 
+    // Plan file should be created with a format header, title, and the new task.
     assert.ok(text.includes('<!-- long-term-plan:format=v1 -->'));
     assert.ok(text.includes('# Active Plan'));
     assert.ok(text.includes('Hello world'));
@@ -61,4 +74,3 @@ test('task.add without planId auto-creates active-plan.md', async () => {
     await rm(rootDir, { recursive: true, force: true });
   }
 });
-

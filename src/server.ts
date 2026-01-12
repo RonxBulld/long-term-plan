@@ -19,13 +19,35 @@ import {
 const DEFAULT_ACTIVE_PLAN_ID = 'active-plan';
 const DEFAULT_ACTIVE_PLAN_TITLE = 'Active Plan';
 
+/**
+ * Create an MCP server instance and register all tools.
+ *
+ * Tool naming convention:
+ * - `plan.*` operates on plan documents (list/get/create).
+ * - `task.*` operates on tasks within a plan.
+ * - `doc.*` validates/repairs raw markdown.
+ *
+ * Default plan behavior:
+ * - If callers omit `planId`, we treat `active-plan` as the implicit target.
+ * - If the plan file is missing, we lazily create it and retry.
+ */
 export function createMcpServer(config: LongTermPlanConfig): McpServer {
   const server = new McpServer({ name: 'long-term-plan-mcp', version: '0.1.0' });
 
+  /**
+   * Detect ENOENT without being strict about the specific error type.
+   * This is used to trigger "create default plan on demand" behavior.
+   */
   function isEnoent(error: unknown): boolean {
     return (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';
   }
 
+  /**
+   * Ensure the default plan exists.
+   *
+   * The tool layer uses this as a best-effort bootstrap when users query the
+   * default plan without having created one yet.
+   */
   async function ensureActivePlanExists(): Promise<void> {
     try {
       await createPlan(config, {
@@ -41,6 +63,13 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
     }
   }
 
+  /**
+   * Wrap tool handlers so they can accept optional `planId`.
+   *
+   * When `planId` is omitted, we:
+   * - Use the default plan id.
+   * - Auto-create the plan if the file is missing (ENOENT), then retry once.
+   */
   async function withDefaultPlanId<T>(
     planId: string | undefined,
     fn: (resolvedPlanId: string) => Promise<T>
@@ -380,6 +409,11 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
   return server;
 }
 
+/**
+ * Connect the MCP server to stdio transport and start serving requests.
+ *
+ * This function does not return until the transport closes.
+ */
 export async function runStdioServer(config: LongTermPlanConfig): Promise<void> {
   const server = createMcpServer(config);
   const transport = new StdioServerTransport();

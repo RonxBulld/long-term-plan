@@ -1,11 +1,23 @@
 import { resolve } from 'node:path';
 import { DEFAULT_PLANS_DIR } from './todo/constants.js';
 
+/**
+ * Runtime configuration for locating and managing plan markdown files.
+ *
+ * `rootDir` is treated as a trust boundary: plan paths must resolve within it.
+ */
 export interface LongTermPlanConfig {
   rootDir: string;
   plansDir: string;
 }
 
+/**
+ * Parse CLI args into a `LongTermPlanConfig`.
+ *
+ * Supported flags:
+ * - `--root <dir>`: filesystem root (defaults to `cwd`).
+ * - `--plans <dir>`: plans directory relative to root (defaults to `.long-term-plan`).
+ */
 export function loadConfigFromArgs(
   argv: string[],
   cwd: string

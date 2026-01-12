@@ -5,6 +5,16 @@ import type { Heading, ParsedPlan, TaskNode } from './model.js';
 import type { TaskStatusSymbol } from './status.js';
 import { symbolToStatus } from './status.js';
 
+/**
+ * Markdown parser for long-term-plan documents.
+ *
+ * The parser is intentionally "format-aware" rather than a general Markdown
+ * parser. It only recognizes:
+ * - headings (`#`..`######`)
+ * - task list items in the strict long-term-plan format
+ *
+ * Everything else is ignored except where it affects block boundaries.
+ */
 export interface ParsePlanResult {
   ok: boolean;
   plan?: ParsedPlan;
@@ -33,6 +43,14 @@ const HEADING_RE = /^(#{1,6})\s+(.*)$/;
 const TASK_LINE_STRICT_RE =
   /^(\s*)-\s+\[([ *√])\]\s+(.*?)(\s+<!--\s*long-term-plan:id=([A-Za-z0-9_-]+)\s*-->)\s*$/;
 
+/**
+ * Parse a strict task line.
+ *
+ * Strict format example:
+ * `- [ ] Title <!-- long-term-plan:id=t_abc123 -->`
+ *
+ * Returns `undefined` if the line is not a valid task line.
+ */
 export function parseTaskLineStrict(line: string): ParsedTaskLine | undefined {
   const match = line.match(TASK_LINE_STRICT_RE);
   if (!match) return undefined;
@@ -65,6 +83,14 @@ function buildHeadingPath(frames: HeadingFrame[], includeH1: boolean): string[] 
   return filtered.map((frame) => frame.text);
 }
 
+/**
+ * Parse a plan markdown document into headings and a task tree.
+ *
+ * Behavior highlights:
+ * - Requires a format header somewhere near the top (first ~30 lines).
+ * - Uses indentation to infer parent/child relationships between tasks.
+ * - Computes `blockEndLine` for each task so edit operations can delete blocks.
+ */
 export function parsePlanMarkdown(text: string): ParsePlanResult {
   const errors: Diagnostic[] = [];
   const warnings: Diagnostic[] = [];
@@ -94,6 +120,8 @@ export function parsePlanMarkdown(text: string): ParsePlanResult {
   const tasksById = new Map<string, TaskNode>();
   const openTasks: OpenTaskFrame[] = [];
 
+  // When we encounter a task, we treat it as the start of a "block" which ends
+  // when we see a line with indentation <= the task's indentation.
   function closeTasksAtBoundary(boundaryLine: number, indent: number): void {
     while (openTasks.length > 0) {
       const top = openTasks[openTasks.length - 1];
@@ -112,6 +140,8 @@ export function parsePlanMarkdown(text: string): ParsePlanResult {
     }
   }
 
+  // Similar to tasks, headings define a section range. We close headings when we
+  // see a heading at the same or higher level.
   function closeHeadingsAtBoundary(boundaryLine: number, level: number): void {
     while (headingStack.length > 0) {
       const top = headingStack[headingStack.length - 1];

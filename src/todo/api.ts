@@ -16,6 +16,18 @@ import {
   writeFileAtomic,
 } from './storage.js';
 
+/**
+ * Public API for plan/task operations.
+ *
+ * This module is the boundary between:
+ * - filesystem storage (`storage.ts`)
+ * - parsing/validation/repair (`parse.ts`, `validate.ts`, `repair.ts`)
+ * - minimal-diff editing (`edit.ts`)
+ *
+ * Concurrency model:
+ * - Most mutating operations accept `ifMatch` (etag) for optimistic concurrency.
+ * - The etag is a SHA-256 of the full document content.
+ */
 export interface PlanStats {
   total: number;
   todo: number;
@@ -23,6 +35,9 @@ export interface PlanStats {
   done: number;
 }
 
+/**
+ * Metadata returned by `listPlans()`.
+ */
 export interface PlanSummary {
   planId: string;
   title: string;
@@ -34,11 +49,17 @@ export interface ListPlansOptions {
   query?: string;
 }
 
+/**
+ * Normalize a search query for case-insensitive matching.
+ */
 function normalizeQuery(query: string | undefined): string | undefined {
   const q = query?.trim();
   return q ? q.toLowerCase() : undefined;
 }
 
+/**
+ * Best-effort extraction of the plan title from an H1 heading.
+ */
 function extractTitleFromText(text: string): string | undefined {
   for (const line of text.split(/\r?\n/)) {
     const match = line.match(/^#\s+(.*)$/);
@@ -47,6 +68,12 @@ function extractTitleFromText(text: string): string | undefined {
   return undefined;
 }
 
+/**
+ * Compute basic status counts directly from raw text.
+ *
+ * This is intentionally line-based so we can compute stats even if the document
+ * is not fully parseable.
+ */
 function computeStats(text: string): PlanStats {
   const stats: PlanStats = { total: 0, todo: 0, doing: 0, done: 0 };
   for (const line of text.split(/\r?\n/)) {
@@ -61,6 +88,11 @@ function computeStats(text: string): PlanStats {
   return stats;
 }
 
+/**
+ * Flatten a task tree into a stable traversal order.
+ *
+ * We use an explicit stack to avoid recursion depth issues on deeply nested plans.
+ */
 function flattenTasks(rootTasks: TaskNode[]): TaskNode[] {
   const out: TaskNode[] = [];
   const stack: TaskNode[] = [...rootTasks].reverse();
@@ -76,6 +108,12 @@ function flattenTasks(rootTasks: TaskNode[]): TaskNode[] {
   return out;
 }
 
+/**
+ * List plan markdown files within `config.plansDir`.
+ *
+ * - Only files ending in `.md` are considered.
+ * - Plan ids are derived from filename (basename) and validated for safety.
+ */
 export async function listPlans(
   config: LongTermPlanConfig,
   options: ListPlansOptions
@@ -124,6 +162,13 @@ export interface GetPlanOptions {
   view?: 'tree' | 'flat';
 }
 
+/**
+ * Read and parse a plan file.
+ *
+ * The `view` option controls the shape of the returned task list:
+ * - `tree`: nested tasks with children
+ * - `flat`: a simplified list of task summaries
+ */
 export async function getPlan(
   config: LongTermPlanConfig,
   options: GetPlanOptions
@@ -169,6 +214,11 @@ export interface CreatePlanOptions {
   template?: 'empty' | 'basic';
 }
 
+/**
+ * Convert an arbitrary title into a safe-ish plan id.
+ *
+ * If we cannot derive a good ascii slug, we fall back to a timestamp-based id.
+ */
 function slugifyPlanId(title: string): string {
   const ascii = title
     .trim()
@@ -180,6 +230,11 @@ function slugifyPlanId(title: string): string {
   return `plan-${Date.now().toString(36)}`;
 }
 
+/**
+ * Create a new plan markdown file.
+ *
+ * If `planId` is not provided, it is derived from `title` via `slugifyPlanId()`.
+ */
 export async function createPlan(
   config: LongTermPlanConfig,
   options: CreatePlanOptions
@@ -217,6 +272,9 @@ export interface GetTaskOptions {
   taskId: string;
 }
 
+/**
+ * Load a single task from a plan, including a small summary of its children.
+ */
 export async function getTask(
   config: LongTermPlanConfig,
   options: GetTaskOptions
@@ -241,6 +299,9 @@ export async function getTask(
   };
 }
 
+/**
+ * Enforce optimistic concurrency when an `ifMatch` etag is provided.
+ */
 function requireIfMatch(currentEtag: string, ifMatch: string | undefined): void {
   if (!ifMatch) return;
   if (ifMatch !== currentEtag) {
@@ -257,6 +318,9 @@ export interface TaskAddOptions {
   ifMatch?: string;
 }
 
+/**
+ * Add a task to a plan document and return its generated id + new etag.
+ */
 export async function taskAdd(
   config: LongTermPlanConfig,
   options: TaskAddOptions
@@ -282,6 +346,12 @@ export interface TaskSetStatusOptions {
   ifMatch?: string;
 }
 
+/**
+ * Update a task status in-place and return the new etag.
+ *
+ * If the status is already set, the document is left untouched and we return
+ * the current etag.
+ */
 export async function taskSetStatus(
   config: LongTermPlanConfig,
   options: TaskSetStatusOptions
@@ -303,6 +373,9 @@ export interface TaskRenameOptions {
   ifMatch?: string;
 }
 
+/**
+ * Rename a task title in-place and return the new etag.
+ */
 export async function taskRename(
   config: LongTermPlanConfig,
   options: TaskRenameOptions
@@ -323,6 +396,9 @@ export interface TaskDeleteOptions {
   ifMatch?: string;
 }
 
+/**
+ * Delete a task (and its indented block) from a plan document.
+ */
 export async function taskDelete(
   config: LongTermPlanConfig,
   options: TaskDeleteOptions
@@ -344,6 +420,11 @@ export interface SearchTasksOptions {
   limit?: number;
 }
 
+/**
+ * Search tasks by substring match on title (case-insensitive).
+ *
+ * When `planId` is omitted, all plans in the directory are searched.
+ */
 export async function searchTasks(
   config: LongTermPlanConfig,
   options: SearchTasksOptions
@@ -393,6 +474,12 @@ export async function searchTasks(
   return hits;
 }
 
+/**
+ * Validate a plan document and return diagnostics with 1-based line numbers.
+ *
+ * The underlying validator uses 0-based indices; we convert to 1-based to match
+ * editor UX expectations.
+ */
 export async function validatePlanDoc(
   config: LongTermPlanConfig,
   options: { planId: string }
@@ -413,6 +500,12 @@ export async function validatePlanDoc(
   };
 }
 
+/**
+ * Repair a plan document and return a summary of what changed.
+ *
+ * If `dryRun` is true, no file is written, but the resulting etag still reflects
+ * what the content *would* be after repair.
+ */
 export async function repairPlanDoc(
   config: LongTermPlanConfig,
   options: {

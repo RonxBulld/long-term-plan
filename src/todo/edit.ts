@@ -8,15 +8,34 @@ import {
   LONG_TERM_PLAN_TASK_ID_KEY,
 } from './constants.js';
 
+/**
+ * Minimal-diff editing helpers for long-term-plan markdown documents.
+ *
+ * These functions work at the line level so that:
+ * - diffs are readable in version control
+ * - we can preserve existing EOL style and trailing newline semantics
+ * - edits stay within the strict long-term-plan format
+ *
+ * All public edit operations validate the final output before returning it.
+ */
 export interface EditResult {
   newText: string;
   changed: boolean;
 }
 
+/**
+ * Detect whether the document uses CRLF or LF newlines.
+ */
 function detectEol(text: string): '\n' | '\r\n' {
   return text.includes('\r\n') ? '\r\n' : '\n';
 }
 
+/**
+ * Split a document into lines while preserving its newline style.
+ *
+ * We keep track of whether the original text ended with a newline so we can
+ * round-trip documents without unintended formatting changes.
+ */
 function splitLines(text: string): { lines: string[]; eol: '\n' | '\r\n'; endsWithNewline: boolean } {
   const eol = detectEol(text);
   const endsWithNewline = text.endsWith('\n');
@@ -27,11 +46,20 @@ function splitLines(text: string): { lines: string[]; eol: '\n' | '\r\n'; endsWi
   return { lines, eol, endsWithNewline };
 }
 
+/**
+ * Join lines back into a string, optionally restoring a trailing newline.
+ */
 function joinLines(lines: string[], eol: '\n' | '\r\n', endsWithNewline: boolean): string {
   const text = lines.join(eol);
   return endsWithNewline ? `${text}${eol}` : text;
 }
 
+/**
+ * Normalize and validate a task title.
+ *
+ * Titles must not contain HTML comment delimiters because task ids are stored
+ * in HTML comments at the end of the line.
+ */
 function sanitizeTitle(title: string): string {
   const normalized = title.replace(/\r?\n/g, ' ').trim();
   if (!normalized) throw new Error('Task title must be non-empty');
@@ -41,6 +69,12 @@ function sanitizeTitle(title: string): string {
   return normalized;
 }
 
+/**
+ * Parse a plan and throw a detailed error on failure.
+ *
+ * This helper is used for edit operations where "cannot parse" should become a
+ * meaningful message rather than silent failure.
+ */
 function requireParsedPlan(text: string): ParsedPlan {
   const parsed = parsePlanMarkdown(text);
   if (!parsed.ok || !parsed.plan) {
@@ -53,12 +87,18 @@ function requireParsedPlan(text: string): ParsedPlan {
   return parsed.plan;
 }
 
+/**
+ * Find a task by id (or throw).
+ */
 function findTask(plan: ParsedPlan, taskId: string): TaskNode {
   const task = plan.tasksById.get(taskId);
   if (!task) throw new Error(`Task not found: ${taskId}`);
   return task;
 }
 
+/**
+ * Update the `[ ]` / `[*]` / `[√]` symbol portion of a task line.
+ */
 function updateLineStatus(line: string, status: TaskStatus): string {
   const symbol = statusToSymbol(status);
   const updated = line.replace(/^(\s*-\s+\[)[ *√](\]\s+)/, `$1${symbol}$2`);
@@ -66,6 +106,9 @@ function updateLineStatus(line: string, status: TaskStatus): string {
   return updated;
 }
 
+/**
+ * Update the title portion of a strict task line while preserving the id trailer.
+ */
 function updateLineTitle(line: string, title: string): string {
   const safeTitle = sanitizeTitle(title);
   const task = parseTaskLineStrict(line);
@@ -80,6 +123,9 @@ function updateLineTitle(line: string, title: string): string {
   return `${prefixMatch[1]}${safeTitle}${suffixMatch[1]}`;
 }
 
+/**
+ * Ensure the required format header exists near the top of the document.
+ */
 function ensureFormatHeader(lines: string[]): void {
   const hasHeader = lines
     .slice(0, Math.min(lines.length, 30))
@@ -88,6 +134,12 @@ function ensureFormatHeader(lines: string[]): void {
   lines.unshift(LONG_TERM_PLAN_FORMAT_HEADER, '');
 }
 
+/**
+ * Ensure a heading path exists at the end of the file and return its end index.
+ *
+ * Section creation is intentionally append-only to avoid reshuffling existing
+ * content in documents that may be partially invalid.
+ */
 function ensureSectionAtEof(lines: string[], sectionPath: string[]): number {
   if (sectionPath.length === 0) return lines.length;
   ensureFormatHeader(lines);
@@ -105,12 +157,20 @@ function ensureSectionAtEof(lines: string[], sectionPath: string[]): number {
   return lines.length;
 }
 
+/**
+ * Build a strict task line at a given indentation level.
+ */
 function createTaskLine(indent: number, status: TaskStatus, title: string, taskId: string): string {
   const safeTitle = sanitizeTitle(title);
   const prefix = `${' '.repeat(indent)}- [${statusToSymbol(status)}] `;
   return `${prefix}${safeTitle} <!-- ${LONG_TERM_PLAN_TASK_ID_KEY}=${taskId} -->`;
 }
 
+/**
+ * Create an index mapping each heading path to its (startLine, endLine).
+ *
+ * This is used to insert tasks into an existing section with minimal changes.
+ */
 function buildSectionIndex(plan: ParsedPlan): Map<string, { startLine: number; endLine: number }> {
   const map = new Map<string, { startLine: number; endLine: number }>();
   for (const heading of plan.headings) {
@@ -120,6 +180,11 @@ function buildSectionIndex(plan: ParsedPlan): Map<string, { startLine: number; e
   return map;
 }
 
+/**
+ * Update a task status in-place.
+ *
+ * This is designed to produce a minimal diff: only the status symbol changes.
+ */
 export function applySetStatus(text: string, taskId: string, status: TaskStatus): EditResult {
   const plan = requireParsedPlan(text);
   const task = findTask(plan, taskId);
@@ -138,6 +203,11 @@ export function applySetStatus(text: string, taskId: string, status: TaskStatus)
   return { newText, changed: newText !== text };
 }
 
+/**
+ * Rename a task in-place.
+ *
+ * Only the title region changes; the task id trailer is preserved.
+ */
 export function applyRename(text: string, taskId: string, title: string): EditResult {
   const plan = requireParsedPlan(text);
   const task = findTask(plan, taskId);
@@ -156,6 +226,9 @@ export function applyRename(text: string, taskId: string, title: string): EditRe
   return { newText, changed: newText !== text };
 }
 
+/**
+ * Delete a task and its entire indented block (children, grandchildren, ...).
+ */
 export function applyDelete(text: string, taskId: string): EditResult {
   const plan = requireParsedPlan(text);
   const task = findTask(plan, taskId);
@@ -184,6 +257,16 @@ export interface AddTaskOptions {
   parentTaskId?: string;
 }
 
+/**
+ * Add a new task to the document.
+ *
+ * Insertion rules (highest priority first):
+ * - If `parentTaskId` is provided, insert as the last child of that task block.
+ * - Else if `sectionPath` is provided, insert under that heading (creating it at EOF if missing).
+ * - Else insert at end-of-file.
+ *
+ * The function always returns text ending with a newline to keep documents tidy.
+ */
 export function applyAddTask(text: string, options: AddTaskOptions): { taskId: string; newText: string } {
   const { lines, eol, endsWithNewline } = splitLines(text);
   const originalPlan = parsePlanMarkdown(text);

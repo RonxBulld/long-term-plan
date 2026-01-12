@@ -3,6 +3,16 @@ import type { Diagnostic } from './diagnostics.js';
 import { errorDiagnostic, warningDiagnostic } from './diagnostics.js';
 import { parsePlanMarkdown, parseTaskLineStrict } from './parse.js';
 
+/**
+ * Validator for long-term-plan markdown documents.
+ *
+ * Compared to `parsePlanMarkdown`, validation is more "forgiving" in detection:
+ * - It uses a loose regex to find candidate task lines.
+ * - It then reports specific diagnostics for malformed or missing id trailers.
+ *
+ * The final result includes both syntactic validation errors and any parse-time
+ * errors/warnings, de-duplicated by (severity, code, line, message).
+ */
 const TASK_LINE_LOOSE_RE = /^(\s*)-\s+\[([^\]])\]\s+(.*)$/;
 const TASK_ID_TRAILER_RE =
   /<!--\s*long-term-plan:id=([A-Za-z0-9_-]+)\s*-->\s*$/;
@@ -12,6 +22,13 @@ export interface ValidatePlanResult {
   warnings: Diagnostic[];
 }
 
+/**
+ * Validate a plan markdown document and return diagnostics.
+ *
+ * This is intended for:
+ * - interactive feedback (show all issues)
+ * - enforcing "safe edits" (edit functions validate their outputs)
+ */
 export function validatePlanMarkdown(text: string): ValidatePlanResult {
   const errors: Diagnostic[] = [];
   const warnings: Diagnostic[] = [];

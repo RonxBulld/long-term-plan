@@ -1,9 +1,20 @@
+/**
+ * Parser unit tests.
+ *
+ * These tests run against the compiled `dist/` output to match how the MCP
+ * server executes in production (via `npm run build`).
+ *
+ * Conventions:
+ * - Test markdown uses `\n` newlines for readability.
+ * - Task ids are fixed strings to keep assertions stable.
+ */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { parsePlanMarkdown } from '../dist/todo/parse.js';
 
 test('parsePlanMarkdown parses tasks and hierarchy', () => {
+  // One section with one parent task and two children.
   const text = [
     '<!-- long-term-plan:format=v1 -->',
     '',

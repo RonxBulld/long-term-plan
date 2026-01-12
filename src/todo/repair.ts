@@ -2,6 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { LONG_TERM_PLAN_FORMAT_HEADER } from './constants.js';
 import { validatePlanMarkdown } from './validate.js';
 
+/**
+ * Safe, explicit repair operations for plan markdown documents.
+ *
+ * Repairs are intentionally conservative:
+ * - Each action is opt-in (caller must choose exactly what to do).
+ * - We avoid modifying fenced code blocks when adding missing task ids.
+ * - We validate the final output and refuse to return invalid documents.
+ */
 export type RepairAction = 'addFormatHeader' | 'addMissingIds';
 
 export interface RepairResult {
@@ -48,6 +56,8 @@ function addMissingIds(lines: string[]): number {
   let added = 0;
   let inFence = false;
 
+  // We treat triple-backtick fences as a toggle and skip all lines inside.
+  // This reduces the risk of mutating example snippets that look like tasks.
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? '';
     const trimmed = line.trimStart();
@@ -68,6 +78,12 @@ function addMissingIds(lines: string[]): number {
   return added;
 }
 
+/**
+ * Apply one or more repair actions to a plan document.
+ *
+ * The returned `applied` field is a structured summary of what changed, so
+ * callers can present a precise report (and avoid guessing).
+ */
 export function repairPlanMarkdown(text: string, actions: RepairAction[]): RepairResult {
   const { lines, eol, endsWithNewline } = splitLines(text);
 
