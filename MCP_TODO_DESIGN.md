@@ -154,12 +154,19 @@ PlanSummary（示例）
 ```
 
 ### 6.2 Task（任务）
-- `task.get({ planId, taskId }) -> { task, etag }`
+- `task.get({ planId?, taskId? }) -> { task, etag }`
 - `task.add({ planId, title, status?, sectionPath?, parentTaskId?, ifMatch }) -> { taskId, etag }`
-- `task.setStatus({ planId, taskId, status, ifMatch }) -> { etag }`
-- `task.rename({ planId, taskId, title, ifMatch }) -> { etag }`
+- `task.setStatus({ planId?, taskId?, status, allowDefaultTarget?, ifMatch }) -> { etag, taskId }`
+- `task.rename({ planId?, taskId?, title, allowDefaultTarget?, ifMatch }) -> { etag, taskId }`
 - `task.delete({ planId, taskId, ifMatch }) -> { etag }`
 - `task.search({ query, status?, planId?, limit?, cursor? }) -> { hits: TaskHit[], nextCursor? }`
+
+默认行为：
+- 省略 `planId`：使用当前活动 plan（`active-plan`）
+- 省略 `taskId`：优先选择第一个 `doing`；若没有 `doing`，则选择从上往下第一个未完成任务
+
+写操作安全阀（推荐）：
+- `task.setStatus` / `task.rename` 若省略 `taskId`：必须显式设置 `allowDefaultTarget=true`，并提供 `ifMatch`（etag）以避免“目标漂移”
 
 状态枚举（建议输出值）
 ```json

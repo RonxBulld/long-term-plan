@@ -173,10 +173,10 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
     'task.get',
     {
       title: 'Get a task',
-      description: `Get a task by id from a plan. If planId is omitted, defaults to "${DEFAULT_ACTIVE_PLAN_ID}".`,
+      description: `Get a task from a plan. If planId is omitted, defaults to "${DEFAULT_ACTIVE_PLAN_ID}". If taskId is omitted, defaults to the first "doing" task; otherwise the first unfinished task.`,
       inputSchema: {
         planId: z.string().optional(),
-        taskId: z.string(),
+        taskId: z.string().optional(),
       },
       outputSchema: {
         task: z.any(),
@@ -234,22 +234,30 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
     'task.setStatus',
     {
       title: 'Set task status',
-      description: 'Update a task status in-place (minimal diff).',
+      description:
+        'Update a task status in-place (minimal diff). If taskId is omitted, you must set allowDefaultTarget=true and provide ifMatch; the server will target the current doing task, else the first unfinished task.',
       inputSchema: {
         planId: z.string().optional(),
-        taskId: z.string(),
+        taskId: z.string().optional(),
         status: z.enum(['todo', 'doing', 'done']),
+        allowDefaultTarget: z.boolean().optional(),
         ifMatch: z.string().optional(),
       },
-      outputSchema: { etag: z.string() },
+      outputSchema: { etag: z.string(), taskId: z.string().optional() },
     },
-    async ({ planId, taskId, status, ifMatch }) => {
-      const { etag } = await withDefaultPlanId(planId, (resolvedPlanId) =>
-        taskSetStatus(config, { planId: resolvedPlanId, taskId, status, ifMatch })
+    async ({ planId, taskId, status, allowDefaultTarget, ifMatch }) => {
+      const { taskId: resolvedTaskId, etag } = await withDefaultPlanId(planId, (resolvedPlanId) =>
+        taskSetStatus(config, {
+          planId: resolvedPlanId,
+          taskId,
+          status,
+          allowDefaultTarget,
+          ifMatch,
+        })
       );
       return {
-        content: [{ type: 'text', text: JSON.stringify({ etag }, null, 2) }],
-        structuredContent: { etag },
+        content: [{ type: 'text', text: JSON.stringify({ taskId: resolvedTaskId, etag }, null, 2) }],
+        structuredContent: { taskId: resolvedTaskId, etag },
       };
     }
   );
@@ -258,22 +266,30 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
     'task.rename',
     {
       title: 'Rename a task',
-      description: 'Update a task title in-place (minimal diff).',
+      description:
+        'Update a task title in-place (minimal diff). If taskId is omitted, you must set allowDefaultTarget=true and provide ifMatch; the server will target the current doing task, else the first unfinished task.',
       inputSchema: {
         planId: z.string().optional(),
-        taskId: z.string(),
+        taskId: z.string().optional(),
         title: z.string(),
+        allowDefaultTarget: z.boolean().optional(),
         ifMatch: z.string().optional(),
       },
-      outputSchema: { etag: z.string() },
+      outputSchema: { etag: z.string(), taskId: z.string().optional() },
     },
-    async ({ planId, taskId, title, ifMatch }) => {
-      const { etag } = await withDefaultPlanId(planId, (resolvedPlanId) =>
-        taskRename(config, { planId: resolvedPlanId, taskId, title, ifMatch })
+    async ({ planId, taskId, title, allowDefaultTarget, ifMatch }) => {
+      const { taskId: resolvedTaskId, etag } = await withDefaultPlanId(planId, (resolvedPlanId) =>
+        taskRename(config, {
+          planId: resolvedPlanId,
+          taskId,
+          title,
+          allowDefaultTarget,
+          ifMatch,
+        })
       );
       return {
-        content: [{ type: 'text', text: JSON.stringify({ etag }, null, 2) }],
-        structuredContent: { etag },
+        content: [{ type: 'text', text: JSON.stringify({ taskId: resolvedTaskId, etag }, null, 2) }],
+        structuredContent: { taskId: resolvedTaskId, etag },
       };
     }
   );

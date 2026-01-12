@@ -26,6 +26,7 @@ test('MCP tools accept omitted planId (defaults to active-plan)', () => {
 
   // Schemas should accept omitted planId for all defaultable tools.
   assert.equal(getTool(server, 'plan.get').inputSchema.safeParse({}).success, true);
+  assert.equal(getTool(server, 'task.get').inputSchema.safeParse({}).success, true);
   assert.equal(
     getTool(server, 'task.get').inputSchema.safeParse({ taskId: 't_a' }).success,
     true
@@ -40,7 +41,21 @@ test('MCP tools accept omitted planId (defaults to active-plan)', () => {
     true
   );
   assert.equal(
+    getTool(server, 'task.setStatus').inputSchema.safeParse({
+      status: 'todo',
+      allowDefaultTarget: true,
+    }).success,
+    true
+  );
+  assert.equal(
     getTool(server, 'task.rename').inputSchema.safeParse({ taskId: 't_a', title: 'new' }).success,
+    true
+  );
+  assert.equal(
+    getTool(server, 'task.rename').inputSchema.safeParse({
+      title: 'new',
+      allowDefaultTarget: true,
+    }).success,
     true
   );
   assert.equal(

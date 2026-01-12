@@ -108,6 +108,28 @@ function flattenTasks(rootTasks: TaskNode[]): TaskNode[] {
   return out;
 }
 
+type DefaultTaskReason = 'doing' | 'unfinished';
+
+function selectDefaultTaskId(
+  rootTasks: TaskNode[],
+  options: { mode: 'read' | 'write' }
+): { taskId: string; reason: DefaultTaskReason } {
+  const ordered = flattenTasks(rootTasks);
+
+  const doingTasks = ordered.filter((task) => task.status === 'doing');
+  if (options.mode === 'write' && doingTasks.length > 1) {
+    throw new Error('AMBIGUOUS: multiple doing tasks; provide taskId');
+  }
+  if (doingTasks.length > 0) {
+    return { taskId: doingTasks[0].id, reason: 'doing' };
+  }
+
+  const firstUnfinished = ordered.find((task) => task.status !== 'done');
+  if (firstUnfinished) return { taskId: firstUnfinished.id, reason: 'unfinished' };
+
+  throw new Error('No unfinished tasks in plan');
+}
+
 /**
  * List plan markdown files within `config.plansDir`.
  *
@@ -269,22 +291,34 @@ export async function createPlan(
 
 export interface GetTaskOptions {
   planId: string;
-  taskId: string;
+  taskId?: string;
 }
 
 /**
- * Load a single task from a plan, including a small summary of its children.
+ * Load a single task from a plan.
+ *
+ * If `taskId` is omitted, we select a default task:
+ * - Prefer the first `doing` task (top-to-bottom order).
+ * - Otherwise, pick the first unfinished task.
  */
 export async function getTask(
   config: LongTermPlanConfig,
   options: GetTaskOptions
 ): Promise<{ task: unknown; etag: string }> {
-  assertSafeId('taskId', options.taskId);
   const { text, etag } = await readPlanFile(config, options.planId);
   const parsed = parsePlanMarkdown(text);
   if (!parsed.ok || !parsed.plan) throw new Error('Failed to parse plan');
-  const task = parsed.plan.tasksById.get(options.taskId);
-  if (!task) throw new Error(`Task not found: ${options.taskId}`);
+
+  let task: TaskNode | undefined;
+  if (options.taskId) {
+    assertSafeId('taskId', options.taskId);
+    task = parsed.plan.tasksById.get(options.taskId);
+    if (!task) throw new Error(`Task not found: ${options.taskId}`);
+  } else {
+    const { taskId } = selectDefaultTaskId(parsed.plan.rootTasks, { mode: 'read' });
+    task = parsed.plan.tasksById.get(taskId);
+    if (!task) throw new Error(`Task not found: ${taskId}`);
+  }
 
   return {
     task: {
@@ -341,9 +375,10 @@ export async function taskAdd(
 
 export interface TaskSetStatusOptions {
   planId: string;
-  taskId: string;
+  taskId?: string;
   status: TaskStatus;
   ifMatch?: string;
+  allowDefaultTarget?: boolean;
 }
 
 /**
@@ -355,22 +390,38 @@ export interface TaskSetStatusOptions {
 export async function taskSetStatus(
   config: LongTermPlanConfig,
   options: TaskSetStatusOptions
-): Promise<{ etag: string }> {
-  assertSafeId('taskId', options.taskId);
+): Promise<{ taskId: string; etag: string }> {
+  if (!options.taskId && !options.allowDefaultTarget) {
+    throw new Error('taskId is required unless allowDefaultTarget=true');
+  }
+  if (!options.taskId && !options.ifMatch) {
+    throw new Error('ifMatch is required when taskId is omitted');
+  }
+
   const { absolutePath, text, etag } = await readPlanFile(config, options.planId);
   requireIfMatch(etag, options.ifMatch);
 
-  const edit = applySetStatus(text, options.taskId, options.status);
-  if (!edit.changed) return { etag };
+  let taskId = options.taskId;
+  if (taskId) {
+    assertSafeId('taskId', taskId);
+  } else {
+    const parsed = parsePlanMarkdown(text);
+    if (!parsed.ok || !parsed.plan) throw new Error('Failed to parse plan');
+    taskId = selectDefaultTaskId(parsed.plan.rootTasks, { mode: 'write' }).taskId;
+  }
+
+  const edit = applySetStatus(text, taskId, options.status);
+  if (!edit.changed) return { taskId, etag };
   await writeFileAtomic(absolutePath, edit.newText);
-  return { etag: sha256Hex(edit.newText) };
+  return { taskId, etag: sha256Hex(edit.newText) };
 }
 
 export interface TaskRenameOptions {
   planId: string;
-  taskId: string;
+  taskId?: string;
   title: string;
   ifMatch?: string;
+  allowDefaultTarget?: boolean;
 }
 
 /**
@@ -379,15 +430,30 @@ export interface TaskRenameOptions {
 export async function taskRename(
   config: LongTermPlanConfig,
   options: TaskRenameOptions
-): Promise<{ etag: string }> {
-  assertSafeId('taskId', options.taskId);
+): Promise<{ taskId: string; etag: string }> {
+  if (!options.taskId && !options.allowDefaultTarget) {
+    throw new Error('taskId is required unless allowDefaultTarget=true');
+  }
+  if (!options.taskId && !options.ifMatch) {
+    throw new Error('ifMatch is required when taskId is omitted');
+  }
+
   const { absolutePath, text, etag } = await readPlanFile(config, options.planId);
   requireIfMatch(etag, options.ifMatch);
 
-  const edit = applyRename(text, options.taskId, options.title);
-  if (!edit.changed) return { etag };
+  let taskId = options.taskId;
+  if (taskId) {
+    assertSafeId('taskId', taskId);
+  } else {
+    const parsed = parsePlanMarkdown(text);
+    if (!parsed.ok || !parsed.plan) throw new Error('Failed to parse plan');
+    taskId = selectDefaultTaskId(parsed.plan.rootTasks, { mode: 'write' }).taskId;
+  }
+
+  const edit = applyRename(text, taskId, options.title);
+  if (!edit.changed) return { taskId, etag };
   await writeFileAtomic(absolutePath, edit.newText);
-  return { etag: sha256Hex(edit.newText) };
+  return { taskId, etag: sha256Hex(edit.newText) };
 }
 
 export interface TaskDeleteOptions {
