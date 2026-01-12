@@ -1,0 +1,23 @@
+{
+  "name": "long-term-plan-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for managing large todo plans stored in structured Markdown.",
+  "type": "module",
+  "bin": {
+    "long-term-plan-mcp": "dist/cli.js"
+  },
+  "scripts": {
+    "clean": "node scripts/clean.js",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "start": "node dist/cli.js",
+    "test": "npm run build && node --test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.3"
+  }
+}
