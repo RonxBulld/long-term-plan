@@ -6,6 +6,7 @@ This repository contains `long-term-plan-mcp`, an MCP stdio server for managing 
 
 - `npm test` (build + run Node.js tests)
 - `npm run build` (TypeScript compile to `dist/`)
+- `npm run install` (build + distribute to `<PROJECT_ROOT>/.codex/skills/long-term-plan/scripts/lib/`)
 - `npm run start` (run `dist/cli.js`)
 
 ## long-term-plan-md v1 format

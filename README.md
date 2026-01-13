@@ -10,6 +10,7 @@ A structured Markdown todo plan manager for “dozens to thousands” of tasks, 
 ```bash
 npm install
 npm run build
+npm run install # sync Codex skill lib/.codex/skills/long-term-plan/scripts/lib/
 ```
 
 ### CLI (`ltp`)
