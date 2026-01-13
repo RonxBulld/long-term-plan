@@ -331,6 +331,7 @@ export interface TaskAddOptions {
   status?: TaskStatus;
   sectionPath?: string[];
   parentTaskId?: string;
+  beforeTaskId?: string;
   ifMatch?: string;
 }
 
@@ -349,6 +350,7 @@ export async function taskAdd(
     status: options.status ?? 'todo',
     sectionPath: options.sectionPath,
     parentTaskId: options.parentTaskId,
+    beforeTaskId: options.beforeTaskId,
   });
 
   await writeFileAtomic(absolutePath, newText);

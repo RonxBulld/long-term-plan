@@ -136,27 +136,38 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
     'task.add',
     {
       title: 'Add a task',
-      description: 'Add a task to a plan (optionally under a section or parent task).',
-      inputSchema: {
-        planId: z.string(),
-        title: z.string(),
-        status: z.enum(['todo', 'doing', 'done']).optional(),
-        sectionPath: z.array(z.string()).optional(),
-        parentTaskId: z.string().optional(),
-        ifMatch: z.string().optional(),
-      },
+      description: 'Add a task to a plan (optionally under a section, under a parent task, or before another task).',
+      inputSchema: z
+        .object({
+          planId: z.string(),
+          title: z.string(),
+          status: z.enum(['todo', 'doing', 'done']).optional(),
+          sectionPath: z.array(z.string()).optional(),
+          parentTaskId: z.string().optional(),
+          beforeTaskId: z.string().optional(),
+          ifMatch: z.string().optional(),
+        })
+        .refine(
+          (value) =>
+            !(
+              value.beforeTaskId &&
+              (value.parentTaskId || (value.sectionPath && value.sectionPath.length > 0))
+            ),
+          { message: 'beforeTaskId cannot be combined with parentTaskId or sectionPath' }
+        ),
       outputSchema: {
         taskId: z.string(),
         etag: z.string(),
       },
     },
-    async ({ planId, title, status, sectionPath, parentTaskId, ifMatch }) => {
+    async ({ planId, title, status, sectionPath, parentTaskId, beforeTaskId, ifMatch }) => {
       const { taskId, etag } = await taskAdd(config, {
         planId,
         title,
         status,
         sectionPath,
         parentTaskId,
+        beforeTaskId,
         ifMatch,
       });
       return {

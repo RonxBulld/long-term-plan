@@ -255,12 +255,14 @@ export interface AddTaskOptions {
   status: TaskStatus;
   sectionPath?: string[];
   parentTaskId?: string;
+  beforeTaskId?: string;
 }
 
 /**
  * Add a new task to the document.
  *
  * Insertion rules (highest priority first):
+ * - If `beforeTaskId` is provided, insert as a sibling immediately before that task.
  * - If `parentTaskId` is provided, insert as the last child of that task block.
  * - Else if `sectionPath` is provided, insert under that heading (creating it at EOF if missing).
  * - Else insert at end-of-file.
@@ -270,6 +272,13 @@ export interface AddTaskOptions {
 export function applyAddTask(text: string, options: AddTaskOptions): { taskId: string; newText: string } {
   const { lines, eol, endsWithNewline } = splitLines(text);
   const originalPlan = parsePlanMarkdown(text);
+
+  if (
+    options.beforeTaskId &&
+    (options.parentTaskId || (options.sectionPath && options.sectionPath.length > 0))
+  ) {
+    throw new Error('beforeTaskId cannot be combined with parentTaskId or sectionPath');
+  }
 
   if (!originalPlan.ok || !originalPlan.plan) {
     // Allow creating into a brand new (or broken) doc only if it can be repaired by adding header + appending.
@@ -296,7 +305,11 @@ export function applyAddTask(text: string, options: AddTaskOptions): { taskId: s
   let insertAt = lines.length;
   let indent = 0;
 
-  if (options.parentTaskId) {
+  if (options.beforeTaskId) {
+    const anchor = findTask(plan, options.beforeTaskId);
+    indent = anchor.indent;
+    insertAt = anchor.line;
+  } else if (options.parentTaskId) {
     const parent = findTask(plan, options.parentTaskId);
     indent = parent.indent + 2;
     insertAt = parent.blockEndLine + 1;

@@ -228,6 +228,62 @@ test('MCP CRUD sequence: nested tasks, search, default task, delete child/parent
   }
 });
 
+test('MCP CRUD sequence: task.add can insert before beforeTaskId', async () => {
+  const { rootDir, cleanup } = await createTempRoot();
+
+  const client = new Client({ name: 'long-term-plan-test-client', version: '0.0.0' });
+  const server = createMcpServer({ rootDir, plansDir: '.long-term-plan' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  try {
+    await callToolOk(client, 'plan.create', {
+      planId: 'order',
+      title: 'Order',
+      template: 'basic',
+    });
+
+    let etag = (await callToolOk(client, 'plan.get', { planId: 'order', view: 'flat' })).structuredContent.etag;
+
+    const addedB = await callToolOk(client, 'task.add', {
+      planId: 'order',
+      title: 'B',
+      sectionPath: ['Inbox'],
+      ifMatch: etag,
+    });
+    const taskB = addedB.structuredContent.taskId;
+    etag = addedB.structuredContent.etag;
+
+    const addedC = await callToolOk(client, 'task.add', {
+      planId: 'order',
+      title: 'C',
+      sectionPath: ['Inbox'],
+      ifMatch: etag,
+    });
+    const taskC = addedC.structuredContent.taskId;
+    etag = addedC.structuredContent.etag;
+
+    const addedA = await callToolOk(client, 'task.add', {
+      planId: 'order',
+      title: 'A',
+      beforeTaskId: taskC,
+      ifMatch: etag,
+    });
+    const taskA = addedA.structuredContent.taskId;
+
+    const plan = await callToolOk(client, 'plan.get', { planId: 'order', view: 'flat' });
+    const tasks = plan.structuredContent.plan.tasks;
+    assert.deepEqual(
+      tasks.map((t) => t.id),
+      [taskB, taskA, taskC]
+    );
+  } finally {
+    await client.close();
+    await cleanup();
+  }
+});
+
 test('MCP CRUD sequence: optimistic concurrency conflicts + ambiguous default targeting', async () => {
   const { rootDir, cleanup } = await createTempRoot();
 
@@ -381,4 +437,3 @@ test('MCP CRUD sequence: legacy doc.validate + doc.repair (dryRun + write)', asy
     await cleanup();
   }
 });
-
