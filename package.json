@@ -10,6 +10,7 @@
   "scripts": {
     "clean": "node scripts/clean.js",
     "build": "npm run clean && tsc -p tsconfig.json",
+    "sync-skill": "node scripts/sync-skill-long-term-plan.js",
     "start": "node dist/cli.js",
     "test": "npm run build && node --test"
   },
