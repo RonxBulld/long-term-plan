@@ -10,6 +10,13 @@ dist/
 .long-term-plan/.cache/
 .long-term-plan/*.tmp.*
 .tmp/
+.tmp-long-term-plan-*
+.tmp-ltp-smoke-*
+
+# Local agent config (keep versioned skills)
+.codex/*
+!.codex/skills/
+!.codex/skills/**
 
 # Logs
 npm-debug.log*
