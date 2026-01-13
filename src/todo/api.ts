@@ -231,37 +231,19 @@ export async function getPlan(
 }
 
 export interface CreatePlanOptions {
-  planId?: string;
+  planId: string;
   title: string;
   template?: 'empty' | 'basic';
 }
 
 /**
- * Convert an arbitrary title into a safe-ish plan id.
- *
- * If we cannot derive a good ascii slug, we fall back to a timestamp-based id.
- */
-function slugifyPlanId(title: string): string {
-  const ascii = title
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
-  if (ascii && /^[a-z0-9]/.test(ascii)) return ascii.slice(0, 64);
-  return `plan-${Date.now().toString(36)}`;
-}
-
-/**
  * Create a new plan markdown file.
- *
- * If `planId` is not provided, it is derived from `title` via `slugifyPlanId()`.
  */
 export async function createPlan(
   config: LongTermPlanConfig,
   options: CreatePlanOptions
 ): Promise<{ planId: string; path: string }> {
-  const planId = options.planId ?? slugifyPlanId(options.title);
+  const planId = options.planId;
   assertSafeId('planId', planId);
 
   const absolutePath = resolvePlanPath(config, planId);
@@ -459,16 +441,14 @@ export async function taskDelete(
 }
 
 export interface SearchTasksOptions {
+  planId: string;
   query: string;
   status?: TaskStatus;
-  planId?: string;
   limit?: number;
 }
 
 /**
  * Search tasks by substring match on title (case-insensitive).
- *
- * When `planId` is omitted, all plans in the directory are searched.
  */
 export async function searchTasks(
   config: LongTermPlanConfig,
@@ -485,9 +465,6 @@ export async function searchTasks(
   const query = options.query.trim().toLowerCase();
   if (!query) return [];
 
-  const planIds = options.planId
-    ? [options.planId]
-    : (await listPlans(config, {})).map((p) => p.planId);
   const limit = Math.max(1, Math.min(500, options.limit ?? 50));
 
   const hits: {
@@ -498,22 +475,20 @@ export async function searchTasks(
     sectionPath: string[];
   }[] = [];
 
-  for (const planId of planIds) {
-    const { text } = await readPlanFile(config, planId);
-    const parsed = parsePlanMarkdown(text);
-    if (!parsed.ok || !parsed.plan) continue;
-    for (const task of parsed.plan.tasksById.values()) {
-      if (hits.length >= limit) return hits;
-      if (options.status && task.status !== options.status) continue;
-      if (!task.title.toLowerCase().includes(query)) continue;
-      hits.push({
-        planId,
-        taskId: task.id,
-        title: task.title,
-        status: task.status,
-        sectionPath: task.sectionPath,
-      });
-    }
+  const { text } = await readPlanFile(config, options.planId);
+  const parsed = parsePlanMarkdown(text);
+  if (!parsed.ok || !parsed.plan) return [];
+  for (const task of parsed.plan.tasksById.values()) {
+    if (hits.length >= limit) return hits;
+    if (options.status && task.status !== options.status) continue;
+    if (!task.title.toLowerCase().includes(query)) continue;
+    hits.push({
+      planId: options.planId,
+      taskId: task.id,
+      title: task.title,
+      status: task.status,
+      sectionPath: task.sectionPath,
+    });
   }
 
   return hits;

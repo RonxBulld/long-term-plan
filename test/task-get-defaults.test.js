@@ -22,11 +22,11 @@ test('task.get defaults to first doing task when taskId is omitted', async () =>
   try {
     await writePlan(
       rootDir,
-      'active-plan',
+      'demo',
       [
         '<!-- long-term-plan:format=v1 -->',
         '',
-        '# Active Plan',
+        '# Demo Plan',
         '',
         '## Inbox',
         '',
@@ -40,7 +40,7 @@ test('task.get defaults to first doing task when taskId is omitted', async () =>
     const server = createMcpServer({ rootDir, plansDir: '.long-term-plan' });
     const tool = getTool(server, 'task.get');
 
-    const result = await tool.handler({});
+    const result = await tool.handler({ planId: 'demo' });
     assert.equal(result.structuredContent.task.id, 't_b');
   } finally {
     await rm(rootDir, { recursive: true, force: true });
@@ -52,11 +52,11 @@ test('task.get defaults to first unfinished task when no doing task exists', asy
   try {
     await writePlan(
       rootDir,
-      'active-plan',
+      'demo',
       [
         '<!-- long-term-plan:format=v1 -->',
         '',
-        '# Active Plan',
+        '# Demo Plan',
         '',
         '## Inbox',
         '',
@@ -70,7 +70,7 @@ test('task.get defaults to first unfinished task when no doing task exists', asy
     const server = createMcpServer({ rootDir, plansDir: '.long-term-plan' });
     const tool = getTool(server, 'task.get');
 
-    const result = await tool.handler({});
+    const result = await tool.handler({ planId: 'demo' });
     assert.equal(result.structuredContent.task.id, 't_todo');
   } finally {
     await rm(rootDir, { recursive: true, force: true });
@@ -82,11 +82,11 @@ test('task.get throws when taskId is omitted and all tasks are done', async () =
   try {
     await writePlan(
       rootDir,
-      'active-plan',
+      'demo',
       [
         '<!-- long-term-plan:format=v1 -->',
         '',
-        '# Active Plan',
+        '# Demo Plan',
         '',
         '## Inbox',
         '',
@@ -99,9 +99,8 @@ test('task.get throws when taskId is omitted and all tasks are done', async () =
     const server = createMcpServer({ rootDir, plansDir: '.long-term-plan' });
     const tool = getTool(server, 'task.get');
 
-    await assert.rejects(tool.handler({}), /No unfinished tasks in plan/);
+    await assert.rejects(tool.handler({ planId: 'demo' }), /No unfinished tasks in plan/);
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }
 });
-

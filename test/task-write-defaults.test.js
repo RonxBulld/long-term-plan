@@ -22,11 +22,11 @@ test('task.update can default taskId with allowDefaultTarget + ifMatch (status o
   try {
     await writePlan(
       rootDir,
-      'active-plan',
+      'demo',
       [
         '<!-- long-term-plan:format=v1 -->',
         '',
-        '# Active Plan',
+        '# Demo Plan',
         '',
         '## Inbox',
         '',
@@ -41,8 +41,9 @@ test('task.update can default taskId with allowDefaultTarget + ifMatch (status o
     const getPlan = getTool(server, 'plan.get');
     const update = getTool(server, 'task.update');
 
-    const etag = (await getPlan.handler({})).structuredContent.etag;
+    const etag = (await getPlan.handler({ planId: 'demo' })).structuredContent.etag;
     const result = await update.handler({
+      planId: 'demo',
       status: 'done',
       allowDefaultTarget: true,
       ifMatch: etag,
@@ -50,7 +51,7 @@ test('task.update can default taskId with allowDefaultTarget + ifMatch (status o
 
     assert.equal(result.structuredContent.taskId, 't_b');
 
-    const planPath = join(rootDir, '.long-term-plan', 'active-plan.md');
+    const planPath = join(rootDir, '.long-term-plan', 'demo.md');
     const text = await readFile(planPath, 'utf8');
     assert.ok(text.includes('- [√] Task B <!-- long-term-plan:id=t_b -->'));
   } finally {
@@ -63,11 +64,11 @@ test('task.update can default taskId with allowDefaultTarget + ifMatch (status +
   try {
     await writePlan(
       rootDir,
-      'active-plan',
+      'demo',
       [
         '<!-- long-term-plan:format=v1 -->',
         '',
-        '# Active Plan',
+        '# Demo Plan',
         '',
         '## Inbox',
         '',
@@ -81,8 +82,9 @@ test('task.update can default taskId with allowDefaultTarget + ifMatch (status +
     const getPlan = getTool(server, 'plan.get');
     const update = getTool(server, 'task.update');
 
-    const etag = (await getPlan.handler({})).structuredContent.etag;
+    const etag = (await getPlan.handler({ planId: 'demo' })).structuredContent.etag;
     const result = await update.handler({
+      planId: 'demo',
       status: 'done',
       title: 'Task B (renamed)',
       allowDefaultTarget: true,
@@ -91,7 +93,7 @@ test('task.update can default taskId with allowDefaultTarget + ifMatch (status +
 
     assert.equal(result.structuredContent.taskId, 't_b');
 
-    const planPath = join(rootDir, '.long-term-plan', 'active-plan.md');
+    const planPath = join(rootDir, '.long-term-plan', 'demo.md');
     const text = await readFile(planPath, 'utf8');
     assert.ok(text.includes('- [√] Task B (renamed) <!-- long-term-plan:id=t_b -->'));
   } finally {
@@ -104,11 +106,11 @@ test('task.update can update title only', async () => {
   try {
     await writePlan(
       rootDir,
-      'active-plan',
+      'demo',
       [
         '<!-- long-term-plan:format=v1 -->',
         '',
-        '# Active Plan',
+        '# Demo Plan',
         '',
         '## Inbox',
         '',
@@ -121,8 +123,9 @@ test('task.update can update title only', async () => {
     const getPlan = getTool(server, 'plan.get');
     const update = getTool(server, 'task.update');
 
-    const etag = (await getPlan.handler({})).structuredContent.etag;
+    const etag = (await getPlan.handler({ planId: 'demo' })).structuredContent.etag;
     const result = await update.handler({
+      planId: 'demo',
       taskId: 't_a',
       title: 'Task A (renamed)',
       ifMatch: etag,
@@ -130,7 +133,7 @@ test('task.update can update title only', async () => {
 
     assert.equal(result.structuredContent.taskId, 't_a');
 
-    const planPath = join(rootDir, '.long-term-plan', 'active-plan.md');
+    const planPath = join(rootDir, '.long-term-plan', 'demo.md');
     const text = await readFile(planPath, 'utf8');
     assert.ok(text.includes('- [*] Task A (renamed) <!-- long-term-plan:id=t_a -->'));
   } finally {
@@ -141,7 +144,10 @@ test('task.update can update title only', async () => {
 test('task.update requires at least one of status or title', async () => {
   const server = createMcpServer({ rootDir: '.', plansDir: '.long-term-plan' });
   const update = getTool(server, 'task.update');
-  await assert.rejects(update.handler({}), /At least one of status or title is required/);
+  await assert.rejects(
+    update.handler({ planId: 'demo' }),
+    /At least one of status or title is required/
+  );
 });
 
 test('task.update requires ifMatch when taskId is omitted', async () => {
@@ -149,11 +155,11 @@ test('task.update requires ifMatch when taskId is omitted', async () => {
   try {
     await writePlan(
       rootDir,
-      'active-plan',
+      'demo',
       [
         '<!-- long-term-plan:format=v1 -->',
         '',
-        '# Active Plan',
+        '# Demo Plan',
         '',
         '## Inbox',
         '',
@@ -166,7 +172,7 @@ test('task.update requires ifMatch when taskId is omitted', async () => {
     const update = getTool(server, 'task.update');
 
     await assert.rejects(
-      update.handler({ status: 'done', allowDefaultTarget: true }),
+      update.handler({ planId: 'demo', status: 'done', allowDefaultTarget: true }),
       /ifMatch is required/
     );
   } finally {
@@ -179,11 +185,11 @@ test('task.update rejects default targeting when multiple doing tasks exist', as
   try {
     await writePlan(
       rootDir,
-      'active-plan',
+      'demo',
       [
         '<!-- long-term-plan:format=v1 -->',
         '',
-        '# Active Plan',
+        '# Demo Plan',
         '',
         '## Inbox',
         '',
@@ -197,9 +203,10 @@ test('task.update rejects default targeting when multiple doing tasks exist', as
     const getPlan = getTool(server, 'plan.get');
     const update = getTool(server, 'task.update');
 
-    const etag = (await getPlan.handler({})).structuredContent.etag;
+    const etag = (await getPlan.handler({ planId: 'demo' })).structuredContent.etag;
     await assert.rejects(
       update.handler({
+        planId: 'demo',
         status: 'done',
         allowDefaultTarget: true,
         ifMatch: etag,

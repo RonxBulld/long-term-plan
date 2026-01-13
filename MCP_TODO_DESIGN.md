@@ -29,7 +29,7 @@
   index.json                 # 可选：加速索引缓存（建议 gitignore）
 ```
 
-> 约定：`active-plan.md` 作为默认活动计划（`planId=active-plan`）。调用 plan/task/doc 工具时若省略 `planId`，默认操作该 plan；若文件不存在将自动创建（仅对省略 `planId` 生效，显式 `planId` 不会自动创建以避免拼写误创建）。
+> 约定：所有 plan/task/doc 工具调用都必须显式提供 `planId`；不提供任何“省略 `planId` 的隐式默认计划”语义。
 
 > 约定：所有写操作默认只允许发生在 `root` 下（防路径穿越）；并且只写 `plansDir`（默认 `.long-term-plan/`）。
 
@@ -103,7 +103,7 @@
 - 若文件缺少协议头、任务缺少 `taskId`、缩进结构无法判定、出现未知状态标记等：
   - 读操作：可返回 `PARSE_ERROR`（包含可定位的行号范围与原因）
   - 写操作：默认拒绝（避免把错误写深）
-  - 提供 `doc.validate` / `doc.repair` 工具做显式修复
+  - （可选）提供 `doc.validate` / `doc.repair` 工具做显式修复（默认不导出，兼容模式才注册）
 
 ## 4. 核心实现策略（可测/可维护）
 
@@ -141,7 +141,7 @@
 ### 6.1 Plan（计划文件）
 - `plan.list({ query?, limit?, cursor? }) -> { plans: PlanSummary[], nextCursor? }`
 - `plan.get({ planId, view?: "tree"|"flat", limit?, cursor? }) -> { plan, etag, nextCursor? }`
-- `plan.create({ planId?, title, template?: "empty"|"basic" }) -> { planId, path }`
+- `plan.create({ planId, title, template?: "empty"|"basic" }) -> { planId, path }`
 
 PlanSummary（示例）
 ```json
@@ -154,14 +154,13 @@ PlanSummary（示例）
 ```
 
 ### 6.2 Task（任务）
-- `task.get({ planId?, taskId? }) -> { task, etag }`
+- `task.get({ planId, taskId? }) -> { task, etag }`
 - `task.add({ planId, title, status?, sectionPath?, parentTaskId?, ifMatch }) -> { taskId, etag }`
-- `task.update({ planId?, taskId?, status?, title?, allowDefaultTarget?, ifMatch }) -> { etag, taskId }`
+- `task.update({ planId, taskId?, status?, title?, allowDefaultTarget?, ifMatch }) -> { etag, taskId }`
 - `task.delete({ planId, taskId, ifMatch }) -> { etag }`
-- `task.search({ query, status?, planId?, limit?, cursor? }) -> { hits: TaskHit[], nextCursor? }`
+- `task.search({ planId, query, status?, limit?, cursor? }) -> { hits: TaskHit[], nextCursor? }`
 
 默认行为：
-- 省略 `planId`：使用当前活动 plan（`active-plan`）
 - 省略 `taskId`：优先选择第一个 `doing`；若没有 `doing`，则选择从上往下第一个未完成任务
 
 写操作安全阀（推荐）：
@@ -177,7 +176,7 @@ PlanSummary（示例）
 - `done` -> `[√]`
 
 ### 6.3 Doc（格式校验/修复）
-- `doc.validate({ planId? }) -> { errors: Diagnostic[], warnings: Diagnostic[] }`
+- `doc.validate({ planId }) -> { errors: Diagnostic[], warnings: Diagnostic[] }`
 - `doc.repair({ planId, actions: RepairAction[], dryRun?: boolean, ifMatch? }) -> { etag, applied }`
 
 RepairAction（建议先做最小集合）
