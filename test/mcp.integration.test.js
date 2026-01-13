@@ -67,7 +67,6 @@ test('MCP integration: create plan, mutate tasks, validate final state', async (
     assert.ok(toolNames.has('task.add'));
     assert.ok(toolNames.has('task.update'));
     assert.ok(toolNames.has('task.delete'));
-    assert.ok(toolNames.has('doc.validate'));
 
     const created = await callToolOk(client, 'plan.create', {
       planId: 'demo',
@@ -143,10 +142,6 @@ test('MCP integration: create plan, mutate tasks, validate final state', async (
 
     const afterDelete = await callToolOk(client, 'plan.get', { planId: 'demo', view: 'tree' });
     assert.equal(afterDelete.structuredContent.plan.stats.total, 0);
-
-    // A valid doc should produce 0 validation errors.
-    const validate = await callToolOk(client, 'doc.validate', { planId: 'demo' });
-    assert.equal(validate.structuredContent.errors.length, 0);
 
     // A mismatched etag should fail with a conflict error.
     const conflict = await client.callTool({

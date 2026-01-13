@@ -28,6 +28,7 @@ function printHelp(): void {
       'Options:',
       '  --root   Root directory (default: cwd)',
       '  --plans  Plans directory relative to root (default: .long-term-plan)',
+      '  --legacy-doc-tools  Also register legacy `doc.*` tool names',
       '  --help   Show help',
       '',
     ].join('\n')

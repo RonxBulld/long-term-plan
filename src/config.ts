@@ -9,6 +9,12 @@ import { DEFAULT_PLANS_DIR } from './todo/constants.js';
 export interface LongTermPlanConfig {
   rootDir: string;
   plansDir: string;
+  /**
+   * Compatibility option: also register legacy `doc.*` tool names.
+   *
+   * Default is false so `doc.*` tools are not exported.
+   */
+  exposeLegacyDocTools?: boolean;
 }
 
 /**
@@ -17,6 +23,7 @@ export interface LongTermPlanConfig {
  * Supported flags:
  * - `--root <dir>`: filesystem root (defaults to `cwd`).
  * - `--plans <dir>`: plans directory relative to root (defaults to `.long-term-plan`).
+ * - `--legacy-doc-tools`: also register legacy `doc.validate` / `doc.repair` tools.
  */
 export function loadConfigFromArgs(
   argv: string[],
@@ -26,6 +33,7 @@ export function loadConfigFromArgs(
 
   let rootDir = cwd;
   let plansDir = DEFAULT_PLANS_DIR;
+  let exposeLegacyDocTools = false;
 
   while (args.length > 0) {
     const flag = args.shift();
@@ -45,8 +53,13 @@ export function loadConfigFromArgs(
       continue;
     }
 
+    if (flag === '--legacy-doc-tools') {
+      exposeLegacyDocTools = true;
+      continue;
+    }
+
     throw new Error(`Unknown argument: ${flag}`);
   }
 
-  return { rootDir, plansDir };
+  return { rootDir, plansDir, exposeLegacyDocTools };
 }

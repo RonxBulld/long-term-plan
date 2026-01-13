@@ -5,6 +5,7 @@
  * - tools are registered with the expected names
  * - `planId` is optional in tool schemas where the server provides a default
  * - the "default plan auto-create" behavior works end-to-end on disk
+ * - legacy `doc.*` tool names are opt-in
  */
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -50,9 +51,23 @@ test('MCP tools accept omitted planId (defaults to active-plan)', () => {
     getTool(server, 'task.delete').inputSchema.safeParse({ taskId: 't_a' }).success,
     true
   );
-  assert.equal(getTool(server, 'doc.validate').inputSchema.safeParse({}).success, true);
+  assert.equal(server?._registeredTools?.['doc.validate'] !== undefined, false);
+  assert.equal(server?._registeredTools?.['doc.repair'] !== undefined, false);
+});
+
+test('legacy doc.* tool names are opt-in', () => {
+  const server = createMcpServer({ rootDir: '.', plansDir: '.long-term-plan' });
+  assert.equal(server?._registeredTools?.['doc.validate'] !== undefined, false);
+  assert.equal(server?._registeredTools?.['doc.repair'] !== undefined, false);
+
+  const legacy = createMcpServer({
+    rootDir: '.',
+    plansDir: '.long-term-plan',
+    exposeLegacyDocTools: true,
+  });
+  assert.equal(getTool(legacy, 'doc.validate').inputSchema.safeParse({}).success, true);
   assert.equal(
-    getTool(server, 'doc.repair').inputSchema.safeParse({ actions: ['addFormatHeader'] }).success,
+    getTool(legacy, 'doc.repair').inputSchema.safeParse({ actions: ['addFormatHeader'] }).success,
     true
   );
 });

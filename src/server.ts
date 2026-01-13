@@ -24,7 +24,9 @@ const DEFAULT_ACTIVE_PLAN_TITLE = 'Active Plan';
  * Tool naming convention:
  * - `plan.*` operates on plan documents (list/get/create).
  * - `task.*` operates on tasks within a plan.
- * - `doc.*` validates/repairs raw markdown.
+ *
+ * Compatibility:
+ * - Legacy `doc.*` tools can be enabled via `config.exposeLegacyDocTools`.
  *
  * Default plan behavior:
  * - If callers omit `planId`, we treat `active-plan` as the implicit target.
@@ -324,78 +326,80 @@ export function createMcpServer(config: LongTermPlanConfig): McpServer {
     }
   );
 
-  server.registerTool(
-    'doc.validate',
-    {
-      title: 'Validate plan docs',
-      description:
-        `Validate a plan markdown file against long-term-plan-md v1 format. Returns diagnostics. If planId is omitted, defaults to "${DEFAULT_ACTIVE_PLAN_ID}".`,
-      inputSchema: {
-        planId: z.string().optional(),
+  if (config.exposeLegacyDocTools) {
+    server.registerTool(
+      'doc.validate',
+      {
+        title: 'Validate plan docs',
+        description:
+          `Validate a plan markdown file against long-term-plan-md v1 format. Returns diagnostics. If planId is omitted, defaults to "${DEFAULT_ACTIVE_PLAN_ID}".`,
+        inputSchema: {
+          planId: z.string().optional(),
+        },
+        outputSchema: {
+          errors: z.array(
+            z.object({
+              code: z.string(),
+              message: z.string(),
+              line: z.number().int().nonnegative().optional(),
+            })
+          ),
+          warnings: z.array(
+            z.object({
+              code: z.string(),
+              message: z.string(),
+              line: z.number().int().nonnegative().optional(),
+            })
+          ),
+        },
       },
-      outputSchema: {
-        errors: z.array(
-          z.object({
-            code: z.string(),
-            message: z.string(),
-            line: z.number().int().nonnegative().optional(),
-          })
-        ),
-        warnings: z.array(
-          z.object({
-            code: z.string(),
-            message: z.string(),
-            line: z.number().int().nonnegative().optional(),
-          })
-        ),
-      },
-    },
-    async ({ planId }) => {
-      const { errors, warnings } = await withDefaultPlanId(planId, (resolvedPlanId) =>
-        validatePlanDoc(config, { planId: resolvedPlanId })
-      );
-      return {
-        content: [{ type: 'text', text: JSON.stringify({ errors, warnings }, null, 2) }],
-        structuredContent: { errors, warnings },
-      };
-    }
-  );
+      async ({ planId }) => {
+        const { errors, warnings } = await withDefaultPlanId(planId, (resolvedPlanId) =>
+          validatePlanDoc(config, { planId: resolvedPlanId })
+        );
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ errors, warnings }, null, 2) }],
+          structuredContent: { errors, warnings },
+        };
+      }
+    );
 
-  server.registerTool(
-    'doc.repair',
-    {
-      title: 'Repair plan docs',
-      description:
-        `Attempt a safe, explicit repair of a plan markdown file (e.g., add header, add missing ids). If planId is omitted, defaults to "${DEFAULT_ACTIVE_PLAN_ID}".`,
-      inputSchema: {
-        planId: z.string().optional(),
-        actions: z.array(z.enum(['addFormatHeader', 'addMissingIds'])),
-        dryRun: z.boolean().optional(),
-        ifMatch: z.string().optional(),
+    server.registerTool(
+      'doc.repair',
+      {
+        title: 'Repair plan docs',
+        description:
+          `Attempt a safe, explicit repair of a plan markdown file (e.g., add header, add missing ids). If planId is omitted, defaults to "${DEFAULT_ACTIVE_PLAN_ID}".`,
+        inputSchema: {
+          planId: z.string().optional(),
+          actions: z.array(z.enum(['addFormatHeader', 'addMissingIds'])),
+          dryRun: z.boolean().optional(),
+          ifMatch: z.string().optional(),
+        },
+        outputSchema: {
+          etag: z.string(),
+          applied: z.object({
+            addFormatHeader: z.boolean(),
+            addMissingIds: z.number(),
+          }),
+        },
       },
-      outputSchema: {
-        etag: z.string(),
-        applied: z.object({
-          addFormatHeader: z.boolean(),
-          addMissingIds: z.number(),
-        }),
-      },
-    },
-    async ({ planId, actions, dryRun, ifMatch }) => {
-      const { etag, applied } = await withDefaultPlanId(planId, (resolvedPlanId) =>
-        repairPlanDoc(config, {
-          planId: resolvedPlanId,
-          actions,
-          dryRun,
-          ifMatch,
-        })
-      );
-      return {
-        content: [{ type: 'text', text: JSON.stringify({ etag, applied }, null, 2) }],
-        structuredContent: { etag, applied },
-      };
-    }
-  );
+      async ({ planId, actions, dryRun, ifMatch }) => {
+        const { etag, applied } = await withDefaultPlanId(planId, (resolvedPlanId) =>
+          repairPlanDoc(config, {
+            planId: resolvedPlanId,
+            actions,
+            dryRun,
+            ifMatch,
+          })
+        );
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ etag, applied }, null, 2) }],
+          structuredContent: { etag, applied },
+        };
+      }
+    );
+  }
 
   return server;
 }
