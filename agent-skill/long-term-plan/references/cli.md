@@ -16,8 +16,8 @@ ID rules:
 
 ## Quick start
 
-- Run: `./.codex/skills/long-term-plan/scripts/ltp --help`
-- Optional: `export PATH="$PWD/.codex/skills/long-term-plan/scripts:$PATH"`
+- Run: `./agent-skill/long-term-plan/scripts/ltp --help`
+- Optional: `export PATH="$PWD/agent-skill/long-term-plan/scripts:$PATH"`
 
 Common scenarios:
 

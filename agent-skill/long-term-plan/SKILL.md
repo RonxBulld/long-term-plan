@@ -9,8 +9,8 @@ Use this skill to keep long-term plan edits consistent, safe, and low-noise.
 
 ## Quick start
 
-- Run: `./.codex/skills/long-term-plan/scripts/ltp --help`
-- Optional: `export PATH="$PWD/.codex/skills/long-term-plan/scripts:$PATH"`
+- Run: `./agent-skill/long-term-plan/scripts/ltp --help`
+- Optional: `export PATH="$PWD/agent-skill/long-term-plan/scripts:$PATH"`
 - Prefer CLI for local edits; prefer server mode when a host needs tool calls.
 
 ## Rules

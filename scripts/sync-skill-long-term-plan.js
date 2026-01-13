@@ -9,13 +9,13 @@ import { dirname, join, resolve } from 'node:path';
  * - The skill bundles a runnable CLI, so it must stay in lockstep with `dist/`.
  *
  * What this script does:
- * - Copy `dist/ltp.js` to `.codex/skills/long-term-plan/scripts/lib/ltp.js`
- * - Copy `dist/todo/*.js` to `.codex/skills/long-term-plan/scripts/lib/todo/*.js`
+ * - Copy `dist/ltp.js` to `agent-skill/long-term-plan/scripts/lib/ltp.js`
+ * - Copy `dist/todo/*.js` to `agent-skill/long-term-plan/scripts/lib/todo/*.js`
  * - Update the skill wrapper to run the copied `lib/ltp.js`
  */
 
 const DIST_DIR = resolve('dist');
-const SKILL_DIR = resolve('.codex/skills/long-term-plan');
+const SKILL_DIR = resolve('agent-skill/long-term-plan');
 const SKILL_SCRIPTS_DIR = join(SKILL_DIR, 'scripts');
 const SKILL_LIB_DIR = join(SKILL_SCRIPTS_DIR, 'lib');
 const SKILL_TODO_LIB_DIR = join(SKILL_LIB_DIR, 'todo');
@@ -49,7 +49,7 @@ async function main() {
     throw new Error('Missing dist/todo/. Run `npm run build` first.');
   }
   if (!(await pathExists(SKILL_DIR))) {
-    throw new Error('Missing .codex/skills/long-term-plan. Create the skill folder first.');
+    throw new Error('Missing agent-skill/long-term-plan. Create the skill folder first.');
   }
 
   await ensureDir(SKILL_TODO_LIB_DIR);
@@ -88,4 +88,3 @@ main().catch((error) => {
   process.stderr.write(`${error?.message || String(error)}\n`);
   process.exitCode = 1;
 });
-

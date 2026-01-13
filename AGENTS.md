@@ -6,7 +6,7 @@ This repository contains `long-term-plan-mcp`, an MCP stdio server for managing 
 
 - `npm test` (build + run Node.js tests)
 - `npm run build` (TypeScript compile to `dist/`)
-- `npm run install` (build + distribute to `<PROJECT_ROOT>/.codex/skills/long-term-plan/scripts/lib/`)
+- `npm run install` (build + distribute to `<PROJECT_ROOT>/agent-skill/long-term-plan/scripts/lib/`)
 - `npm run start` (run `dist/cli.js`)
 
 ## long-term-plan-md v1 format
@@ -20,7 +20,7 @@ This repository contains `long-term-plan-mcp`, an MCP stdio server for managing 
 
 - Always pass `planId` to `plan.*` / `task.*` / `doc.*` tool calls (no implicit default plan).
 - Prefer minimal diffs when editing Markdown tasks: update only the status box or the title region, without reformatting/reordering.
-- When changing code or docs, check implementation↔docs consistency (including `.codex/skills/long-term-plan/**`).
+- When changing code or docs, check implementation↔docs consistency (including `agent-skill/long-term-plan/**`).
 
 ## Code size limit
 
