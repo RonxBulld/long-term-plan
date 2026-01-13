@@ -1,149 +1,149 @@
-# long-term-plan：MCP Todo 管理小工具设计方案（v0）
+# long-term-plan: MCP Todo Tool Design (v0)
 
-## 1. 目标与约束
+## 1. Goals and Constraints
 
-### 目标
-- 用 **TypeScript** 编写一个 **MCP Server**，通过 **npx** 启动（stdio transport），提供 Todo 计划的增删改查。
-- 面向 “数十到上千条任务、多个计划文件” 的规模，保证 **可读、可写、可检索、可扩展**。
-- **数据的唯一事实来源**是结构化 Markdown 文件（可人读、可 diff、可 git 管）。
-- 通过精心的内容格式与写入策略，尽量 **减少格式冲突**（尤其是 git merge 冲突与无谓大 diff）。
+### Goals
+- Write an **MCP Server** in **TypeScript**, launched via **npx** (stdio transport), to provide CRUD for todo plans.
+- Target a scale of “dozens to thousands of tasks across multiple plan files”, ensuring **readable, writable, searchable, and extensible**.
+- The **single source of truth** for data is structured Markdown files (human-readable, diff-friendly, and git-manageable).
+- Use a careful content format and write strategy to **minimize formatting conflicts** (especially git merge conflicts and needless large diffs).
 
-### 明确约束（按需求原文）
-- 任务状态标记：
-  - `[ ]`：未开始或未完成
-  - `[*]`：进行中
-  - `[√]`：已完成
-- **非 MCP** 修改 Markdown 文件后：不保证一定能正确解析（工具可 “拒绝/报错/建议修复”，但不必须容错到任意 Markdown）。
+### Explicit constraints (from original requirements)
+- Task status markers:
+  - `[ ]`: not started / not done
+  - `[*]`: in progress
+  - `[√]`: done
+- After Markdown files are modified **outside MCP**: correct parsing is not guaranteed (tools may reject/error/suggest repair, but are not required to tolerate arbitrary Markdown).
 
-### 非目标（v0 先不做或可选）
-- 不把 Markdown 当数据库：不追求强一致 ACID、复杂查询语言、跨文件事务。
-- 不承诺兼容任意第三方 Markdown 任务列表语法（例如 `[x]`、`- [ ]` 之外的变体）。
+### Non-goals (v0: not implemented or optional)
+- Do not treat Markdown as a database: no strong ACID guarantees, no complex query language, no cross-file transactions.
+- Do not promise compatibility with every third-party Markdown task list syntax (e.g. `[x]` and other variants beyond `- [ ]`).
 
-## 2. 仓库与文件布局（建议）
+## 2. Repository and File Layout (Suggested)
 
 ```
-./.long-term-plan/           # 计划文件目录（默认 + 推荐）
+./.long-term-plan/           # Plan directory (default + recommended)
   2026Q1.md
   product-roadmap.md
-  config.json                # 可选：工具配置（是否提交到 git 由团队决定）
-  index.json                 # 可选：加速索引缓存（建议 gitignore）
+  config.json                # Optional: tool config (whether to commit is up to the team)
+  index.json                 # Optional: index cache (recommended to gitignore)
 ```
 
-> 约定：所有 plan/task/doc 工具调用都必须显式提供 `planId`；不提供任何“省略 `planId` 的隐式默认计划”语义。
+> Convention: all `plan.*` / `task.*` / `doc.*` tool calls must explicitly provide `planId`; no implicit default plan when `planId` is omitted.
 
-> 约定：所有写操作默认只允许发生在 `root` 下（防路径穿越）；并且只写 `plansDir`（默认 `.long-term-plan/`）。
+> Convention: by default, all write operations are only allowed under `root` (prevent path traversal), and only within `plansDir` (default `.long-term-plan/`).
 
-## 3. Markdown 数据格式（long-term-plan-md v1）
+## 3. Markdown Data Format (long-term-plan-md v1)
 
-### 3.1 文件级协议头（必需）
-- 文件第一段（前若干行）必须包含协议声明：
+### 3.1 File-level format header (Required)
+- The first paragraph (first few lines) of the file must include the format declaration:
 
 ```md
 <!-- long-term-plan:format=v1 -->
 ```
 
-### 3.2 章节（Section）
-- 使用标准 Markdown 标题作为章节（推荐从 `##` 开始）：
+### 3.2 Sections (Section)
+- Use standard Markdown headings as sections (recommended to start from `##`):
 
 ```md
-## 里程碑
+## Milestones
 ### Sprint 1
 ```
 
-- 工具以标题层级构建 `sectionPath`（例如 `["里程碑","Sprint 1"]`）。
-- 标题文本允许人类编辑；**不作为稳定标识**（稳定引用依赖 taskId）。
+- The tool builds `sectionPath` from the heading hierarchy (e.g. `["Milestones","Sprint 1"]`).
+- Heading text is editable by humans; **it is not a stable identifier** (stable references rely on `taskId`).
 
-### 3.3 任务行（Task Line）
+### 3.3 Task Lines (Task Line)
 
-#### 语法（必需满足）
-任务必须是 “无序列表项 + 状态框 + 标题 + 行尾ID注释”：
-
-```md
-- [ ] 任务标题 <!-- long-term-plan:id=t_01HT... -->
-```
-
-- 无序列表符号：固定使用 `-`（工具写入时统一使用 `-`）。
-- 状态标记：仅允许 `[ ]` / `[*]` / `[√]`。
-- `taskId`：在行尾 HTML 注释中声明，键名固定为 `long-term-plan:id`。
-
-#### taskId 规范（建议）
-- 形如：`t_<ULID>`（例如 `t_01HT8Y2...`），全局唯一（跨文件也尽量唯一）。
-- 只允许字符集：`[A-Za-z0-9_-]`，避免转义与编码差异。
-
-#### 子任务（层级）
-- 通过缩进与嵌套列表表达父子关系（工具规范写入：每层 **2 空格**）：
+#### Syntax (Must satisfy)
+A task must be an “unordered list item + status box + title + trailing ID comment”:
 
 ```md
-- [ ] 父任务 <!-- long-term-plan:id=t_A -->
-  - [ ] 子任务 <!-- long-term-plan:id=t_B -->
-  - [√] 子任务2 <!-- long-term-plan:id=t_C -->
+- [ ] Task title <!-- long-term-plan:id=t_01HT... -->
 ```
 
-> 解析规则：仅把“符合任务行语法的列表项”识别为 Task；同层/子层的其他列表项视为注释与正文，保留但不结构化解析。
+- Unordered list marker: always use `-` (the tool writes using `-` uniformly).
+- Status marker: only `[ ]` / `[*]` / `[√]` are allowed.
+- `taskId`: declared in a trailing HTML comment, with the key fixed as `long-term-plan:id`.
 
-### 3.4 任务正文（可选、保留但不强解析）
-允许在任务下方写说明、链接、普通列表项等（机器只做最小理解，写回时尽量原样保留）：
+#### taskId convention (Recommended)
+- Format: `t_<ULID>` (e.g. `t_01HT8Y2...`), globally unique (preferably unique across files too).
+- Allowed character set only: `[A-Za-z0-9_-]`, avoiding escaping and encoding differences.
+
+#### Subtasks (Hierarchy)
+- Express parent/child relationships via indentation and nested lists (tool writes with **2 spaces** per level):
 
 ```md
-- [*] 调研方案 <!-- long-term-plan:id=t_R -->
-  - 背景：……
-  - 链接：……
-  - 风险：……
+- [ ] Parent task <!-- long-term-plan:id=t_A -->
+  - [ ] Child task <!-- long-term-plan:id=t_B -->
+  - [√] Child task 2 <!-- long-term-plan:id=t_C -->
 ```
 
-### 3.5 冲突最小化写入约束（关键）
-为减少 merge 冲突与大 diff，写入策略遵循：
-- **状态更新**：只替换任务行中的 `[...]` 三字符内容，不改动其余文本与缩进。
-- **改标题**：只替换 `[...]` 后到 `<!-- long-term-plan:id=... -->` 前的“标题区域”，不改动注释与其后内容。
-- **新增任务**：优先在目标 section 或父任务块末尾追加，避免全局重排；不进行自动排序。
-- **删除任务**：删除该任务行 + 其缩进子块（直到缩进回退到同级/更浅）。
-- **默认不格式化**：除非用户显式调用 `repair/format` 工具，否则不做“全文件规范化”。
+> Parsing rule: only list items that match the task-line syntax are recognized as Tasks; other list items at the same level or in sublevels are treated as notes/body text and are preserved but not structurally parsed.
 
-### 3.6 “非 MCP 修改” 的定位
-- 若文件缺少协议头、任务缺少 `taskId`、缩进结构无法判定、出现未知状态标记等：
-  - 读操作：可返回 `PARSE_ERROR`（包含可定位的行号范围与原因）
-  - 写操作：默认拒绝（避免把错误写深）
-  - （可选）提供 `doc.validate` / `doc.repair` 工具做显式修复（默认不导出，兼容模式才注册）
+### 3.4 Task body (Optional, preserved but not strongly parsed)
+You can write notes, links, plain list items, etc. under a task (the machine does minimal interpretation and tries to preserve the original text on write-back):
 
-## 4. 核心实现策略（可测/可维护）
+```md
+- [*] Explore approaches <!-- long-term-plan:id=t_R -->
+  - Background: ...
+  - Links: ...
+  - Risks: ...
+```
 
-### 4.1 解析：线性、行级、可定位
-- 不依赖“完整 Markdown AST”，而是实现一个 **行级解析器**：
-  - 识别 headings（`^#{1,6} `）
-  - 识别任务行（regex + 行尾 `long-term-plan:id`）
-  - 用缩进栈构建树
-  - 为每个 task 记录 `lineStart/lineEnd` 与 `indent`，支持最小文本补丁
-- 好处：性能可控、错误定位清晰、写回更容易做到 “最小 diff”。
+### 3.5 Conflict-minimizing write constraints (Key)
+To minimize merge conflicts and large diffs, the write strategy follows:
+- **Status updates**: only replace the 3-character `[...]` content in the task line; do not change other text or indentation.
+- **Title updates**: only replace the “title area” between `[...]` and `<!-- long-term-plan:id=... -->`; do not change the comment or anything after it.
+- **Adding tasks**: prefer appending at the end of the target section or parent task block to avoid global reordering; do not auto-sort.
+- **Deleting tasks**: delete the task line plus its indented subtree (until indentation returns to the same or shallower level).
+- **No formatting by default**: unless the user explicitly calls a `repair/format` tool, do not perform full-file normalization.
 
-### 4.2 写入：原子化 + 乐观并发控制
-- 每次读返回 `etag`（例如 `sha256(fileText)`）。
-- 写操作要求客户端携带 `ifMatch`：
-  - 若 `etag` 不匹配，返回 `CONFLICT`（提示重新读取后再提交）
-- 写文件采用 “临时文件 + rename” 的原子替换（同目录内）避免半写入。
+### 3.6 Detecting “non-MCP modifications”
+- If the file is missing the format header, tasks are missing `taskId`, indentation structure cannot be determined, unknown status markers appear, etc.:
+  - Read operations: may return `PARSE_ERROR` (including a locatable line range and reason)
+  - Write operations: rejected by default (avoid compounding errors)
+  - (Optional) provide `doc.validate` / `doc.repair` tools for explicit repair (not exported by default; only registered in compatibility mode)
 
-## 5. MCP Server 形态（npx 启动）
+## 4. Core implementation strategy (Testable/Maintainable)
 
-### 5.1 命令形式（建议）
-- 包名（示例）：`long-term-plan-mcp`
-- 启动命令：
-  - `npx long-term-plan-mcp --root . --plans .long-term-plan`（默认可省略 `--plans`）
-- 传输：stdio（符合 MCP 常见部署方式）
+### 4.1 Parsing: linear, line-based, locatable
+- Instead of relying on a “full Markdown AST”, implement a **line-level parser**:
+  - Recognize headings (`^#{1,6} `)
+  - Recognize task lines (regex + trailing `long-term-plan:id`)
+  - Build a tree using an indentation stack
+  - Record `lineStart/lineEnd` and `indent` for each task to support minimal text patches
+- Benefits: controllable performance, clear error localization, and easier “minimal diff” write-back.
 
-### 5.2 配置加载优先级
-1) CLI 参数
+### 4.2 Writing: atomic + optimistic concurrency control
+- Each read returns an `etag` (e.g. `sha256(fileText)`).
+- Write operations require the client to send `ifMatch`:
+  - If `etag` does not match, return `CONFLICT` (prompt the client to re-read and retry)
+- Write files using an atomic “temporary file + rename” replacement (within the same directory) to avoid partial writes.
+
+## 5. MCP Server shape (npx launch)
+
+### 5.1 Command form (Suggested)
+- Package name (example): `long-term-plan-mcp`
+- Launch command:
+  - `npx long-term-plan-mcp --root . --plans .long-term-plan` (`--plans` can be omitted by default)
+- Transport: stdio (fits common MCP deployment)
+
+### 5.2 Config load precedence
+1) CLI arguments
 2) `.long-term-plan/config.json`
-3) 默认值：`root=process.cwd()`，`plansDir=.long-term-plan`
+3) Defaults: `root=process.cwd()`, `plansDir=.long-term-plan`
 
-## 6. MCP 工具接口（CRUD + 校验）
+## 6. MCP tool interfaces (CRUD + validation)
 
-> 命名建议：用 `plan.*` / `task.*` / `doc.*` 分组，避免未来扩展冲突。
+> Naming suggestion: group by `plan.*` / `task.*` / `doc.*` to avoid future extension conflicts.
 
-### 6.1 Plan（计划文件）
+### 6.1 Plan (Plan files)
 - `plan.list({ query?, limit?, cursor? }) -> { plans: PlanSummary[], nextCursor? }`
 - `plan.get({ planId, view?: "tree"|"flat", limit?, cursor? }) -> { plan, etag, nextCursor? }`
 - `plan.create({ planId, title, template?: "empty"|"basic" }) -> { planId, path }`
 
-PlanSummary（示例）
+PlanSummary (example)
 ```json
 {
   "planId": "product-roadmap",
@@ -153,51 +153,51 @@ PlanSummary（示例）
 }
 ```
 
-### 6.2 Task（任务）
+### 6.2 Task (Tasks)
 - `task.get({ planId, taskId? }) -> { task, etag }`
 - `task.add({ planId, title, status?, sectionPath?, parentTaskId?, ifMatch }) -> { taskId, etag }`
 - `task.update({ planId, taskId?, status?, title?, allowDefaultTarget?, ifMatch }) -> { etag, taskId }`
 - `task.delete({ planId, taskId, ifMatch }) -> { etag }`
 - `task.search({ planId, query, status?, limit?, cursor? }) -> { hits: TaskHit[], nextCursor? }`
 
-默认行为：
-- 省略 `taskId`：优先选择第一个 `doing`；若没有 `doing`，则选择从上往下第一个未完成任务
+Default behavior:
+- If `taskId` is omitted: prefer the first `doing`; if none are `doing`, select the first not-yet-done task from top to bottom
 
-写操作安全阀（推荐）：
-- `task.update` 若省略 `taskId`：必须显式设置 `allowDefaultTarget=true`，并提供 `ifMatch`（etag）以避免“目标漂移”
+Write safety valve (recommended):
+- If `task.update` omits `taskId`: must explicitly set `allowDefaultTarget=true` and provide `ifMatch` (etag) to avoid “target drift”
 
-状态枚举（建议输出值）
+Status enum (recommended output)
 ```json
 { "status": "todo" | "doing" | "done" }
 ```
-写回映射：
+Write-back mapping:
 - `todo` -> `[ ]`
 - `doing` -> `[*]`
 - `done` -> `[√]`
 
-### 6.3 Doc（格式校验/修复）
+### 6.3 Doc (Format validation/repair)
 - `doc.validate({ planId }) -> { errors: Diagnostic[], warnings: Diagnostic[] }`
 - `doc.repair({ planId, actions: RepairAction[], dryRun?: boolean, ifMatch? }) -> { etag, applied }`
 
-RepairAction（建议先做最小集合）
-- `addMissingIds`：为缺少 `long-term-plan:id` 的任务行补齐（需要严格规则，避免误判）
-- `normalizeIndent`：把任务层级缩进统一为 2 空格（可选，容易产生大 diff，默认不做）
-- `normalizeStatusChar`：把 `[x]`/`[X]` 之类（若存在）转换为 `[√]`（可选）
+RepairAction (suggest starting with a minimal set)
+- `addMissingIds`: add missing `long-term-plan:id` to task lines (needs strict rules to avoid false positives)
+- `normalizeIndent`: normalize task indentation to 2 spaces (optional; can create large diffs; off by default)
+- `normalizeStatusChar`: convert `[x]` / `[X]` etc. (if present) to `[√]` (optional)
 
-## 7. 关键边界与防御性设计（多层校验）
+## 7. Key edges and defense-in-depth design (Multi-layer validation)
 
-1) **入口校验（MCP 参数）**：planId/path 只允许相对路径与白名单目录；拒绝 `..`、绝对路径。
-2) **文件级校验**：协议头、编码（UTF-8）、行结束符兼容（`\n`/`\r\n`）。
-3) **结构级校验**：taskId 唯一、缩进层级合法、状态字符合法。
-4) **写入级防护**：`etag ifMatch` 冲突检测 + 原子写入，避免并发覆盖与部分写入。
+1) **Entry validation (MCP params)**: `planId/path` only allow relative paths and whitelisted directories; reject `..` and absolute paths.
+2) **File-level validation**: header, encoding (UTF-8), line ending compatibility (`\n`/`\r\n`).
+3) **Structure-level validation**: unique taskId, valid indentation hierarchy, valid status markers.
+4) **Write-level protection**: `etag ifMatch` conflict detection + atomic writes, avoiding concurrent overwrites and partial writes.
 
-## 8. 可扩展点（v1+）
-- 任务属性：`due`、`tags`、`estimate` 等（建议继续放行尾注释中，如 `<!-- long-term-plan:id=... tags=a,b -->`，并保持 key=value 简单语法）。
-- 依赖关系：`depends=t_xxx`，以及 “阻塞/被阻塞” 的查询工具。
-- 工作流：`task.start` 可选 “同一 plan 仅允许一个 doing” 的策略开关。
-- 索引缓存：`.long-term-plan/index.json`（只做加速，不作为事实来源）。
+## 8. Extensibility points (v1+)
+- Task attributes: `due`, `tags`, `estimate`, etc. (suggest keep them in trailing comments like `<!-- long-term-plan:id=... tags=a,b -->`, and keep a simple key=value grammar).
+- Dependencies: `depends=t_xxx`, plus queries for “blocking/blocked by”.
+- Workflow: `task.start` optional policy switch such as “only allow one doing per plan”.
+- Index cache: `.long-term-plan/index.json` (speed only, not a source of truth).
 
-## 9. 测试建议（保证可测）
-- `parse(text) -> DocModel` 纯函数：覆盖缩进、章节、混合正文、非法行的测试夹具。
-- `applyEdit(text, op) -> { newText, changedRanges }`：断言最小 diff（只改目标行）。
-- fixtures/golden：用真实的 `.long-term-plan/*.md` 样例做快照测试。
+## 9. Testing suggestions (Ensure testability)
+- `parse(text) -> DocModel` as a pure function: cover indentation, sections, mixed body text, and invalid lines via test fixtures.
+- `applyEdit(text, op) -> { newText, changedRanges }`: assert minimal diffs (only touch target lines).
+- fixtures/golden: use real `.long-term-plan/*.md` samples for snapshot tests.
