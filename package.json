@@ -4,7 +4,8 @@
   "description": "MCP server for managing large todo plans stored in structured Markdown.",
   "type": "module",
   "bin": {
-    "long-term-plan-mcp": "dist/cli.js"
+    "long-term-plan-mcp": "dist/cli.js",
+    "ltp": "dist/ltp.js"
   },
   "scripts": {
     "clean": "node scripts/clean.js",
