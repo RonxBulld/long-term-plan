@@ -19,10 +19,13 @@ This repository contains `long-term-plan-mcp`, an MCP stdio server for managing 
 
 - Always pass `planId` to `plan.*` / `task.*` / `doc.*` tool calls (no implicit default plan).
 - Prefer minimal diffs when editing Markdown tasks: update only the status box or the title region, without reformatting/reordering.
+- When changing code or docs, check implementation↔docs consistency (including `.codex/skills/long-term-plan/**`).
 
 ## Code size limit
 
 - The count of non-blank, non-comment code lines in any single file MUST NOT exceed 500. If an existing file already exceeds this limit, do not increase it; refactor/split instead.
+- The count of non-blank, non-comment code lines in any single function MUST NOT exceed 150.
+- The comment rate (comment lines ÷ non-blank lines) in any code file you edit MUST be at least 15%.
 
 ## Git commit message format
 
