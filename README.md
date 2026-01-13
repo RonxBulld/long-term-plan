@@ -1,16 +1,31 @@
 # long-term-plan-mcp
 
-A stdio server based on the **Model Context Protocol (MCP)** for managing todo plans at a “dozens to thousands” scale, with data stored in **structured Markdown**.
+A structured Markdown todo plan manager for “dozens to thousands” of tasks, with two first-class interfaces:
+
+- `ltp`: a local CLI for plan/task CRUD
+- `long-term-plan-mcp`: a stdio server exposing plan/task tools to an MCP host
 
 ## Quick Start (Local)
 
 ```bash
 npm install
 npm run build
-node dist/cli.js --root . --plans .long-term-plan
 ```
 
-> As an MCP server, it is typically started by a host (IDE/Agent); this project uses stdio transport by default.
+### CLI (`ltp`)
+
+```bash
+node dist/ltp.js plan list
+node dist/ltp.js plan create demo --title "Demo Plan" --template basic
+node dist/ltp.js task add demo --title "Write docs"
+node dist/ltp.js task next demo
+```
+
+### Stdio server (`long-term-plan-mcp`)
+
+```bash
+node dist/cli.js --root . --plans .long-term-plan
+```
 
 ## long-term-plan-md v1 (Markdown Conventions)
 
@@ -34,7 +49,7 @@ Convention: all `plan.*` / `task.*` / `doc.*` tool calls must explicitly provide
 If `taskId` is omitted in `task.get`, it returns the first in-progress (`doing`) task; if none are in progress, it returns the first not-yet-done task from top to bottom.
 You can also omit `taskId` in `task.update`, but you must provide `ifMatch` and set `allowDefaultTarget=true` to avoid accidental edits; if multiple tasks are in progress, default targeting is rejected as ambiguous.
 
-## MCP Tools
+## Server tools (stdio)
 
 - `plan.list` / `plan.get` / `plan.create`
 - `task.get` / `task.add` / `task.update` / `task.delete` / `task.search`

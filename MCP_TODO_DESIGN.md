@@ -134,6 +134,12 @@ To minimize merge conflicts and large diffs, the write strategy follows:
 2) `.long-term-plan/config.json`
 3) Defaults: `root=process.cwd()`, `plansDir=.long-term-plan`
 
+### 5.3 Local CLI (`ltp`)
+
+- Provide a normal command-line interface for plan/task CRUD (no host required).
+- Output JSON to stdout (friendly to scripts and `jq`).
+- Use the same core parsing/editing/validation logic as the stdio server to keep behavior in sync.
+
 ## 6. MCP tool interfaces (CRUD + validation)
 
 > Naming suggestion: group by `plan.*` / `task.*` / `doc.*` to avoid future extension conflicts.
