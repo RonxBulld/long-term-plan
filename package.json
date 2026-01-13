@@ -11,7 +11,10 @@
     "clean": "node scripts/clean.js",
     "build": "npm run clean && tsc -p tsconfig.json",
     "sync-skill": "node scripts/sync-skill-long-term-plan.js",
-    "install": "npm run build && npm run sync-skill",
+    "skill:sync": "npm run build && npm run sync-skill",
+    "deploy:codex": "npm run skill:sync && node scripts/deploy-skills.js --target codex",
+    "deploy:claude": "npm run skill:sync && node scripts/deploy-skills.js --target claude",
+    "deploy": "npm run skill:sync && node scripts/deploy-skills.js --target both",
     "start": "node dist/cli.js",
     "test": "npm run build && node --test"
   },

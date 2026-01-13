@@ -10,7 +10,14 @@ A structured Markdown todo plan manager for “dozens to thousands” of tasks, 
 ```bash
 npm install
 npm run build
-npm run install # sync skill lib agent-skill/long-term-plan/scripts/lib/
+npm run skill:sync # sync skill lib agent-skill/long-term-plan/scripts/lib/
+```
+
+Optional: copy the versioned skill(s) into your user skill directory:
+
+```bash
+npm run deploy:codex
+npm run deploy:claude
 ```
 
 ### CLI (`ltp`)
