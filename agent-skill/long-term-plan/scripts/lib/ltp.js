@@ -10,8 +10,15 @@
  */
 import { resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createPlan, getPlan, getTask, listPlans, repairPlanDoc, searchTasks, taskAdd, taskDelete, taskUpdate, validatePlanDoc, } from './todo/api.js';
+import { readFileSync } from 'node:fs';
+import { readFile as readFileAsync } from 'node:fs/promises';
+import { createPlan, getPlan, getTask, listPlans, planUpdate, repairPlanDoc, searchTasks, taskAdd, taskDelete, taskUpdate, validatePlanDoc, } from './todo/api.js';
 import { DEFAULT_PLANS_DIR } from './todo/constants.js';
+/**
+ * Render CLI help text.
+ *
+ * Keep this stable and human-readable: tests and users often depend on it.
+ */
 function helpText(defaultRoot) {
     return [
         'ltp — long-term plan CLI (structured Markdown)',
@@ -23,12 +30,13 @@ function helpText(defaultRoot) {
         '  ltp plan list [--query <text>]',
         '  ltp plan get <planId> [--view tree|flat]',
         '  ltp plan create <planId> --title <text> [--template empty|basic]',
+        '  ltp plan update <planId> [--title <text>] [--body-stdin|--body-file <path>|--clear-body] [--if-match <etag>]',
         '',
         'Task:',
         '  ltp task get <planId> [taskId]',
         '  ltp task next <planId>',
-        '  ltp task add <planId> --title <text> [--status todo|doing|done] [--section A/B] [--parent <taskId>] [--before <taskId>] [--if-match <etag>]',
-        '  ltp task update <planId> [taskId] [--status todo|doing|done] [--title <text>] [--allow-default] [--if-match <etag>]',
+        '  ltp task add <planId> --title <text> [--status todo|doing|done] [--body-stdin|--body-file <path>] [--section A/B] [--parent <taskId>] [--before <taskId>] [--if-match <etag>]',
+        '  ltp task update <planId> [taskId] [--status todo|doing|done] [--title <text>] [--body-stdin|--body-file <path>|--clear-body] [--allow-default] [--if-match <etag>]',
         '  ltp task start <planId> <taskId>',
         '  ltp task done <planId> <taskId>',
         '  ltp task delete <planId> <taskId> [--if-match <etag>]',
@@ -44,12 +52,27 @@ function helpText(defaultRoot) {
         '',
     ].join('\n');
 }
+/**
+ * Write help text to stdout.
+ *
+ * This is used both for explicit `--help` and for error fallback.
+ */
 function writeHelp(io, defaultRoot) {
     io.stdout.write(helpText(defaultRoot));
 }
+/**
+ * Write a JSON value to stdout (pretty-printed).
+ *
+ * The CLI prints structured JSON on stdout and reserves stderr for errors.
+ */
 function writeJson(io, value) {
     io.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
+/**
+ * Consume a boolean flag from argv.
+ *
+ * Returns true if the flag was present and removed.
+ */
 function takeFlag(argv, flag) {
     const index = argv.indexOf(flag);
     if (index === -1)
@@ -57,6 +80,11 @@ function takeFlag(argv, flag) {
     argv.splice(index, 1);
     return true;
 }
+/**
+ * Consume a `--flag value` or `--flag=value` option from argv.
+ *
+ * Returns undefined when absent. Throws if present but missing a value.
+ */
 function takeOption(argv, flag) {
     const indexEq = argv.findIndex((arg) => arg.startsWith(`${flag}=`));
     if (indexEq !== -1) {
@@ -75,11 +103,21 @@ function takeOption(argv, flag) {
         throw new Error(`Missing value for ${flag}`);
     return value;
 }
+/**
+ * Ensure there are no remaining `--unknown` flags in argv.
+ *
+ * Commands should call this after consuming all expected flags/options.
+ */
 function assertNoUnknownFlags(argv) {
     const unknown = argv.find((arg) => arg.startsWith('--'));
     if (unknown)
         throw new Error(`Unknown option: ${unknown}`);
 }
+/**
+ * Parse `--section A/B` into a normalized section path array.
+ *
+ * Returns undefined for empty/whitespace-only inputs.
+ */
 function parseSectionPath(value) {
     if (!value)
         return undefined;
@@ -89,6 +127,11 @@ function parseSectionPath(value) {
         .filter(Boolean);
     return parts.length > 0 ? parts : undefined;
 }
+/**
+ * Parse a task status string from a flag value.
+ *
+ * Throws with a flag-specific message when invalid.
+ */
 function parseStatus(value, flagName) {
     if (!value)
         return undefined;
@@ -96,6 +139,9 @@ function parseStatus(value, flagName) {
         return value;
     throw new Error(`Invalid ${flagName}: ${JSON.stringify(value)}`);
 }
+/**
+ * Parse `--view` into a supported plan view.
+ */
 function parseView(value) {
     if (!value)
         return undefined;
@@ -103,6 +149,9 @@ function parseView(value) {
         return value;
     throw new Error(`Invalid --view: ${JSON.stringify(value)}`);
 }
+/**
+ * Parse `--template` into a supported plan template.
+ */
 function parseTemplate(value) {
     if (!value)
         return undefined;
@@ -110,6 +159,9 @@ function parseTemplate(value) {
         return value;
     throw new Error(`Invalid --template: ${JSON.stringify(value)}`);
 }
+/**
+ * Parse `--actions` for `doc repair` into the supported repair action list.
+ */
 function parseRepairActions(value) {
     return value
         .split(',')
@@ -120,6 +172,244 @@ function parseRepairActions(value) {
             return action;
         throw new Error(`Invalid repair action: ${JSON.stringify(action)}`);
     });
+}
+/**
+ * Read body input flags into an update payload.
+ *
+ * Supported sources:
+ * - `--body` (inline string)
+ * - `--body-file` (filesystem path)
+ * - `--body-stdin` (read from stdin)
+ * - `--clear-body` (explicitly remove existing body)
+ */
+async function takeBodyArgs(argv, defaultRoot) {
+    const clearBody = takeFlag(argv, '--clear-body');
+    const bodyStdin = takeFlag(argv, '--body-stdin');
+    const bodyFile = takeOption(argv, '--body-file');
+    const bodyInline = takeOption(argv, '--body');
+    const selected = [clearBody, bodyStdin, bodyFile !== undefined, bodyInline !== undefined].filter(Boolean).length;
+    if (selected > 1) {
+        throw new Error('Body flags are mutually exclusive: use only one of --body, --body-file, --body-stdin, --clear-body');
+    }
+    if (clearBody)
+        return { clearBody: true };
+    if (bodyInline !== undefined)
+        return { bodyMarkdown: bodyInline };
+    if (bodyFile !== undefined) {
+        const absolute = resolvePath(defaultRoot, bodyFile);
+        return { bodyMarkdown: await readFileAsync(absolute, 'utf8') };
+    }
+    if (bodyStdin)
+        return { bodyMarkdown: readFileSync(0, 'utf8') };
+    return {};
+}
+/**
+ * Parse global CLI options (`--root`, `--plans`) into an API config object.
+ *
+ * Commands share the same config shape as the MCP server.
+ */
+function takeCliConfig(argv, defaultRoot) {
+    let rootDir = defaultRoot;
+    const rootArg = takeOption(argv, '--root');
+    if (rootArg)
+        rootDir = resolvePath(defaultRoot, rootArg);
+    let plansDir = DEFAULT_PLANS_DIR;
+    const plansArg = takeOption(argv, '--plans');
+    if (plansArg)
+        plansDir = plansArg;
+    return { rootDir, plansDir };
+}
+/**
+ * Execute `ltp plan ...` commands.
+ */
+async function handlePlanCommand(config, argv, io, defaultRoot) {
+    const sub = argv.shift();
+    if (sub === 'list') {
+        const query = takeOption(argv, '--query');
+        assertNoUnknownFlags(argv);
+        const plans = await listPlans(config, { query });
+        writeJson(io, { plans });
+        return 0;
+    }
+    if (sub === 'get') {
+        const planId = argv.shift();
+        const view = parseView(takeOption(argv, '--view'));
+        assertNoUnknownFlags(argv);
+        if (!planId)
+            throw new Error('Missing <planId>');
+        const { plan, etag } = await getPlan(config, { planId, view });
+        writeJson(io, { plan, etag });
+        return 0;
+    }
+    if (sub === 'create') {
+        const planId = argv.shift();
+        const title = takeOption(argv, '--title');
+        const template = parseTemplate(takeOption(argv, '--template'));
+        assertNoUnknownFlags(argv);
+        if (!planId)
+            throw new Error('Missing <planId>');
+        if (!title)
+            throw new Error('Missing --title');
+        const created = await createPlan(config, { planId, title, template });
+        writeJson(io, created);
+        return 0;
+    }
+    if (sub === 'update') {
+        const planId = argv.shift();
+        const title = takeOption(argv, '--title');
+        const ifMatch = takeOption(argv, '--if-match');
+        const { bodyMarkdown, clearBody } = await takeBodyArgs(argv, defaultRoot);
+        assertNoUnknownFlags(argv);
+        if (!planId)
+            throw new Error('Missing <planId>');
+        const { etag } = await planUpdate(config, { planId, title, bodyMarkdown, clearBody, ifMatch });
+        writeJson(io, { etag });
+        return 0;
+    }
+    throw new Error(`Unknown plan command: ${sub ?? '(missing)'}`);
+}
+/**
+ * Execute `ltp task ...` commands.
+ */
+async function handleTaskCommand(config, argv, io, defaultRoot) {
+    const sub = argv.shift();
+    if (sub === 'get' || sub === 'next') {
+        const planId = argv.shift();
+        const taskId = sub === 'get' ? argv.shift() : undefined;
+        assertNoUnknownFlags(argv);
+        if (!planId)
+            throw new Error('Missing <planId>');
+        const { task, etag } = await getTask(config, { planId, taskId });
+        writeJson(io, { task, etag });
+        return 0;
+    }
+    if (sub === 'add') {
+        const planId = argv.shift();
+        const title = takeOption(argv, '--title');
+        const { bodyMarkdown } = await takeBodyArgs(argv, defaultRoot);
+        const status = parseStatus(takeOption(argv, '--status'), '--status');
+        const sectionPath = parseSectionPath(takeOption(argv, '--section'));
+        const parentTaskId = takeOption(argv, '--parent');
+        const beforeTaskId = takeOption(argv, '--before');
+        const ifMatch = takeOption(argv, '--if-match');
+        assertNoUnknownFlags(argv);
+        if (!planId)
+            throw new Error('Missing <planId>');
+        if (!title)
+            throw new Error('Missing --title');
+        const { taskId, etag } = await taskAdd(config, {
+            planId,
+            title,
+            bodyMarkdown,
+            status,
+            sectionPath,
+            parentTaskId,
+            beforeTaskId,
+            ifMatch,
+        });
+        writeJson(io, { taskId, etag });
+        return 0;
+    }
+    if (sub === 'update') {
+        const planId = argv.shift();
+        const taskId = argv.shift();
+        const status = parseStatus(takeOption(argv, '--status'), '--status');
+        const title = takeOption(argv, '--title');
+        const { bodyMarkdown, clearBody } = await takeBodyArgs(argv, defaultRoot);
+        const allowDefaultTarget = takeFlag(argv, '--allow-default') || takeFlag(argv, '--allow-default-target');
+        const ifMatch = takeOption(argv, '--if-match');
+        assertNoUnknownFlags(argv);
+        if (!planId)
+            throw new Error('Missing <planId>');
+        const { taskId: updatedTaskId, etag } = await taskUpdate(config, {
+            planId,
+            taskId,
+            status,
+            title,
+            bodyMarkdown,
+            clearBody,
+            allowDefaultTarget,
+            ifMatch,
+        });
+        writeJson(io, { taskId: updatedTaskId, etag });
+        return 0;
+    }
+    if (sub === 'start' || sub === 'done') {
+        const planId = argv.shift();
+        const taskId = argv.shift();
+        const status = sub === 'start' ? 'doing' : 'done';
+        assertNoUnknownFlags(argv);
+        if (!planId)
+            throw new Error('Missing <planId>');
+        if (!taskId)
+            throw new Error('Missing <taskId>');
+        const { taskId: updatedTaskId, etag } = await taskUpdate(config, { planId, taskId, status });
+        writeJson(io, { taskId: updatedTaskId, etag });
+        return 0;
+    }
+    if (sub === 'delete') {
+        const planId = argv.shift();
+        const taskId = argv.shift();
+        const ifMatch = takeOption(argv, '--if-match');
+        assertNoUnknownFlags(argv);
+        if (!planId)
+            throw new Error('Missing <planId>');
+        if (!taskId)
+            throw new Error('Missing <taskId>');
+        const { etag } = await taskDelete(config, { planId, taskId, ifMatch });
+        writeJson(io, { etag });
+        return 0;
+    }
+    if (sub === 'search') {
+        const planId = argv.shift();
+        const query = takeOption(argv, '--query');
+        const status = parseStatus(takeOption(argv, '--status'), '--status');
+        const limitRaw = takeOption(argv, '--limit');
+        const limit = limitRaw ? Number(limitRaw) : undefined;
+        assertNoUnknownFlags(argv);
+        if (!planId)
+            throw new Error('Missing <planId>');
+        if (!query)
+            throw new Error('Missing --query');
+        if (limit !== undefined && (!Number.isFinite(limit) || limit <= 0)) {
+            throw new Error(`Invalid --limit: ${JSON.stringify(limitRaw)}`);
+        }
+        const hits = await searchTasks(config, { planId, query, status, limit });
+        writeJson(io, { hits });
+        return 0;
+    }
+    throw new Error(`Unknown task command: ${sub ?? '(missing)'}`);
+}
+/**
+ * Execute `ltp doc ...` commands.
+ */
+async function handleDocCommand(config, argv, io) {
+    const sub = argv.shift();
+    if (sub === 'validate') {
+        const planId = argv.shift();
+        assertNoUnknownFlags(argv);
+        if (!planId)
+            throw new Error('Missing <planId>');
+        const { errors, warnings } = await validatePlanDoc(config, { planId });
+        writeJson(io, { errors, warnings });
+        return 0;
+    }
+    if (sub === 'repair') {
+        const planId = argv.shift();
+        const actionsRaw = takeOption(argv, '--actions');
+        const dryRun = takeFlag(argv, '--dry-run');
+        const ifMatch = takeOption(argv, '--if-match');
+        assertNoUnknownFlags(argv);
+        if (!planId)
+            throw new Error('Missing <planId>');
+        if (!actionsRaw)
+            throw new Error('Missing --actions');
+        const actions = parseRepairActions(actionsRaw);
+        const { etag, applied } = await repairPlanDoc(config, { planId, actions, dryRun, ifMatch });
+        writeJson(io, { etag, applied });
+        return 0;
+    }
+    throw new Error(`Unknown doc command: ${sub ?? '(missing)'}`);
 }
 /**
  * Run the CLI with a provided argv array (excluding `node` and script path).
@@ -135,185 +425,20 @@ export async function runLtpCli(args, io = { stdout: process.stdout, stderr: pro
             writeHelp(io, defaultRoot);
             return 0;
         }
-        let rootDir = defaultRoot;
-        const rootArg = takeOption(argv, '--root');
-        if (rootArg)
-            rootDir = resolvePath(defaultRoot, rootArg);
-        let plansDir = DEFAULT_PLANS_DIR;
-        const plansArg = takeOption(argv, '--plans');
-        if (plansArg)
-            plansDir = plansArg;
-        const config = { rootDir, plansDir };
+        const config = takeCliConfig(argv, defaultRoot);
         const cmd = argv.shift();
         if (!cmd || cmd === 'help') {
             writeHelp(io, defaultRoot);
             return 0;
         }
         if (cmd === 'plan') {
-            const sub = argv.shift();
-            if (sub === 'list') {
-                const query = takeOption(argv, '--query');
-                assertNoUnknownFlags(argv);
-                const plans = await listPlans(config, { query });
-                writeJson(io, { plans });
-                return 0;
-            }
-            if (sub === 'get') {
-                const planId = argv.shift();
-                const view = parseView(takeOption(argv, '--view'));
-                assertNoUnknownFlags(argv);
-                if (!planId)
-                    throw new Error('Missing <planId>');
-                const { plan, etag } = await getPlan(config, { planId, view });
-                writeJson(io, { plan, etag });
-                return 0;
-            }
-            if (sub === 'create') {
-                const planId = argv.shift();
-                const title = takeOption(argv, '--title');
-                const template = parseTemplate(takeOption(argv, '--template'));
-                assertNoUnknownFlags(argv);
-                if (!planId)
-                    throw new Error('Missing <planId>');
-                if (!title)
-                    throw new Error('Missing --title');
-                const created = await createPlan(config, { planId, title, template });
-                writeJson(io, created);
-                return 0;
-            }
-            throw new Error(`Unknown plan command: ${sub ?? '(missing)'}`);
+            return await handlePlanCommand(config, argv, io, defaultRoot);
         }
         if (cmd === 'task') {
-            const sub = argv.shift();
-            if (sub === 'get' || sub === 'next') {
-                const planId = argv.shift();
-                const taskId = sub === 'get' ? argv.shift() : undefined;
-                assertNoUnknownFlags(argv);
-                if (!planId)
-                    throw new Error('Missing <planId>');
-                const { task, etag } = await getTask(config, { planId, taskId });
-                writeJson(io, { task, etag });
-                return 0;
-            }
-            if (sub === 'add') {
-                const planId = argv.shift();
-                const title = takeOption(argv, '--title');
-                const status = parseStatus(takeOption(argv, '--status'), '--status');
-                const sectionPath = parseSectionPath(takeOption(argv, '--section'));
-                const parentTaskId = takeOption(argv, '--parent');
-                const beforeTaskId = takeOption(argv, '--before');
-                const ifMatch = takeOption(argv, '--if-match');
-                assertNoUnknownFlags(argv);
-                if (!planId)
-                    throw new Error('Missing <planId>');
-                if (!title)
-                    throw new Error('Missing --title');
-                const { taskId, etag } = await taskAdd(config, {
-                    planId,
-                    title,
-                    status,
-                    sectionPath,
-                    parentTaskId,
-                    beforeTaskId,
-                    ifMatch,
-                });
-                writeJson(io, { taskId, etag });
-                return 0;
-            }
-            if (sub === 'update') {
-                const planId = argv.shift();
-                const taskId = argv.shift();
-                const status = parseStatus(takeOption(argv, '--status'), '--status');
-                const title = takeOption(argv, '--title');
-                const allowDefaultTarget = takeFlag(argv, '--allow-default') || takeFlag(argv, '--allow-default-target');
-                const ifMatch = takeOption(argv, '--if-match');
-                assertNoUnknownFlags(argv);
-                if (!planId)
-                    throw new Error('Missing <planId>');
-                const { taskId: updatedTaskId, etag } = await taskUpdate(config, {
-                    planId,
-                    taskId,
-                    status,
-                    title,
-                    allowDefaultTarget,
-                    ifMatch,
-                });
-                writeJson(io, { taskId: updatedTaskId, etag });
-                return 0;
-            }
-            if (sub === 'start' || sub === 'done') {
-                const planId = argv.shift();
-                const taskId = argv.shift();
-                const status = sub === 'start' ? 'doing' : 'done';
-                assertNoUnknownFlags(argv);
-                if (!planId)
-                    throw new Error('Missing <planId>');
-                if (!taskId)
-                    throw new Error('Missing <taskId>');
-                const { taskId: updatedTaskId, etag } = await taskUpdate(config, { planId, taskId, status });
-                writeJson(io, { taskId: updatedTaskId, etag });
-                return 0;
-            }
-            if (sub === 'delete') {
-                const planId = argv.shift();
-                const taskId = argv.shift();
-                const ifMatch = takeOption(argv, '--if-match');
-                assertNoUnknownFlags(argv);
-                if (!planId)
-                    throw new Error('Missing <planId>');
-                if (!taskId)
-                    throw new Error('Missing <taskId>');
-                const { etag } = await taskDelete(config, { planId, taskId, ifMatch });
-                writeJson(io, { etag });
-                return 0;
-            }
-            if (sub === 'search') {
-                const planId = argv.shift();
-                const query = takeOption(argv, '--query');
-                const status = parseStatus(takeOption(argv, '--status'), '--status');
-                const limitRaw = takeOption(argv, '--limit');
-                const limit = limitRaw ? Number(limitRaw) : undefined;
-                assertNoUnknownFlags(argv);
-                if (!planId)
-                    throw new Error('Missing <planId>');
-                if (!query)
-                    throw new Error('Missing --query');
-                if (limit !== undefined && (!Number.isFinite(limit) || limit <= 0)) {
-                    throw new Error(`Invalid --limit: ${JSON.stringify(limitRaw)}`);
-                }
-                const hits = await searchTasks(config, { planId, query, status, limit });
-                writeJson(io, { hits });
-                return 0;
-            }
-            throw new Error(`Unknown task command: ${sub ?? '(missing)'}`);
+            return await handleTaskCommand(config, argv, io, defaultRoot);
         }
         if (cmd === 'doc') {
-            const sub = argv.shift();
-            if (sub === 'validate') {
-                const planId = argv.shift();
-                assertNoUnknownFlags(argv);
-                if (!planId)
-                    throw new Error('Missing <planId>');
-                const { errors, warnings } = await validatePlanDoc(config, { planId });
-                writeJson(io, { errors, warnings });
-                return 0;
-            }
-            if (sub === 'repair') {
-                const planId = argv.shift();
-                const actionsRaw = takeOption(argv, '--actions');
-                const dryRun = takeFlag(argv, '--dry-run');
-                const ifMatch = takeOption(argv, '--if-match');
-                assertNoUnknownFlags(argv);
-                if (!planId)
-                    throw new Error('Missing <planId>');
-                if (!actionsRaw)
-                    throw new Error('Missing --actions');
-                const actions = parseRepairActions(actionsRaw);
-                const { etag, applied } = await repairPlanDoc(config, { planId, actions, dryRun, ifMatch });
-                writeJson(io, { etag, applied });
-                return 0;
-            }
-            throw new Error(`Unknown doc command: ${sub ?? '(missing)'}`);
+            return await handleDocCommand(config, argv, io);
         }
         throw new Error(`Unknown command: ${cmd}`);
     }
