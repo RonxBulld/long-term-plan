@@ -1,6 +1,7 @@
 import { LONG_TERM_PLAN_FORMAT_HEADER } from './constants.js';
 import type { Diagnostic } from './diagnostics.js';
 import { errorDiagnostic, warningDiagnostic } from './diagnostics.js';
+import { isSafeId } from './id.js';
 import { parsePlanMarkdown, parseTaskLineStrict } from './parse.js';
 
 /**
@@ -20,6 +21,21 @@ const TASK_ID_TRAILER_RE =
 export interface ValidatePlanResult {
   errors: Diagnostic[];
   warnings: Diagnostic[];
+}
+
+/**
+ * Describe the shared "safe id" requirements in a human-friendly way.
+ *
+ * Rationale: the parser extracts ids from markdown, but only the validator
+ * enforces that ids are targetable by APIs (which rely on the same rules).
+ *
+ * This keeps the system consistent:
+ * - reads can still parse hand-edited docs
+ * - writes can refuse invalid ids until repaired
+ * - tool schemas can validate ids up-front
+ */
+function safeIdExpectationText(): string {
+  return 'expected 1..128 chars: first [A-Za-z0-9], then [A-Za-z0-9_-]';
 }
 
 /**
@@ -102,12 +118,39 @@ export function validatePlanMarkdown(text: string): ValidatePlanResult {
         continue;
       }
 
+      const id = idMatch[1] ?? '';
+      if (!isSafeId(id)) {
+        pushUniqueDiagnostic(
+          errors,
+          errorKeys,
+          errorDiagnostic(
+            'INVALID_TASK_ID',
+            `Invalid task id: ${JSON.stringify(id)} (${safeIdExpectationText()})`,
+            lineIndex
+          )
+        );
+        continue;
+      }
+
       pushUniqueDiagnostic(
         errors,
         errorKeys,
         errorDiagnostic(
           'MALFORMED_TASK_LINE',
           'Task line is malformed (expected: - [ ] title <!-- long-term-plan:id=... -->)',
+          lineIndex
+        )
+      );
+      continue;
+    }
+
+    if (!isSafeId(strict.id)) {
+      pushUniqueDiagnostic(
+        errors,
+        errorKeys,
+        errorDiagnostic(
+          'INVALID_TASK_ID',
+          `Invalid task id: ${JSON.stringify(strict.id)} (${safeIdExpectationText()})`,
           lineIndex
         )
       );

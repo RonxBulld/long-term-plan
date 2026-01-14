@@ -337,7 +337,7 @@ export function parsePlanMarkdown(text: string): ParsePlanResult {
           errorDiagnostic(
             'DUPLICATE_TASK_ID',
             `Duplicate task id: ${task.id}`,
-            lineIndex
+            task.line
           )
         );
       } else {
