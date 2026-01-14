@@ -4,11 +4,21 @@
  * We validate two key properties:
  * - edits only touch the intended part of the line (status symbol / title)
  * - the resulting document still passes validation
+ *
+ * In addition, this suite covers body encoding rules used by the v1 format:
+ * - task bodies are stored as an indented blockquote run under the task line
+ * - plan bodies are stored as a top-level blockquote run under the first H1
+ *
+ * These tests intentionally use exact string comparisons so we can detect
+ * accidental formatting churn (e.g. extra whitespace or reflow).
+ *
+ * Note: these unit tests run against `dist/` so failures represent the shipped
+ * CLI/server behavior rather than TypeScript source quirks.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { applyAddTask, applyRename, applySetStatus } from '../dist/todo/edit.js';
+import { applyAddTask, applyRename, applySetPlanBody, applySetStatus, applySetTaskBody } from '../dist/todo/edit.js';
 import { validatePlanMarkdown } from '../dist/todo/validate.js';
 
 test('applySetStatus only changes the status symbol', () => {
@@ -34,6 +44,7 @@ test('edited text remains valid', () => {
 });
 
 test('applyAddTask can insert before beforeTaskId', () => {
+  // Placement: insert a sibling without rewriting unrelated lines.
   const before = [
     '<!-- long-term-plan:format=v1 -->',
     '',
@@ -74,4 +85,86 @@ test('applyAddTask rejects beforeTaskId with other placement options', () => {
       }),
     /beforeTaskId cannot be combined/
   );
+});
+
+test('applySetTaskBody encodes body as an indented blockquote run', () => {
+  // Encoding: body lines are stored as `> ...` with strict +2 indentation.
+  const before = [
+    '<!-- long-term-plan:format=v1 -->',
+    '',
+    '# T',
+    '',
+    '- [ ] A <!-- long-term-plan:id=t_1 -->',
+    '',
+  ].join('\n');
+
+  const body = ['- [ ] checkbox', '', '```ts', 'const x = 1', '```'].join('\n');
+  const after = applySetTaskBody(before, 't_1', body).newText;
+
+  assert.equal(
+    after,
+    [
+      '<!-- long-term-plan:format=v1 -->',
+      '',
+      '# T',
+      '',
+      '- [ ] A <!-- long-term-plan:id=t_1 -->',
+      '  > - [ ] checkbox',
+      '  >',
+      '  > ```ts',
+      '  > const x = 1',
+      '  > ```',
+      '',
+    ].join('\n')
+  );
+});
+
+test('applySetTaskBody can clear an existing structured body', () => {
+  const before = [
+    '<!-- long-term-plan:format=v1 -->',
+    '',
+    '# T',
+    '',
+    '- [ ] A <!-- long-term-plan:id=t_1 -->',
+    '  > Note line 1',
+    '  >',
+    '  > Note line 2',
+    '',
+  ].join('\n');
+
+  const cleared = applySetTaskBody(before, 't_1', null);
+  assert.equal(cleared.changed, true);
+  assert.equal(
+    cleared.newText,
+    ['<!-- long-term-plan:format=v1 -->', '', '# T', '', '- [ ] A <!-- long-term-plan:id=t_1 -->', ''].join('\n')
+  );
+});
+
+test('applySetPlanBody inserts a plan-level blockquote body under the first H1', () => {
+  // Plan body lives under the first H1 so it is naturally near the plan title.
+  const before = [
+    '<!-- long-term-plan:format=v1 -->',
+    '',
+    '# Title',
+    '',
+    '## Inbox',
+    '',
+  ].join('\n');
+
+  const after = applySetPlanBody(before, 'Plan intro').newText;
+  assert.equal(
+    after,
+    [
+      '<!-- long-term-plan:format=v1 -->',
+      '',
+      '# Title',
+      '',
+      '> Plan intro',
+      '## Inbox',
+      '',
+    ].join('\n')
+  );
+
+  const validation = validatePlanMarkdown(after);
+  assert.equal(validation.errors.length, 0);
 });
