@@ -69,6 +69,19 @@ function sanitizeTitle(title: string): string {
   return normalized;
 }
 
+function sanitizePlanTitle(title: string): string {
+  const normalized = title.replace(/\r?\n/g, ' ').trim();
+  if (!normalized) throw new Error('Plan title must be non-empty');
+  return normalized;
+}
+
+function encodeBlockquoteBody(bodyMarkdown: string, indent: number): string[] {
+  const normalized = bodyMarkdown.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+  const lines = normalized.split('\n');
+  const prefix = `${' '.repeat(indent)}>`;
+  return lines.map((line) => (line.length === 0 ? prefix : `${prefix} ${line}`));
+}
+
 /**
  * Parse a plan and throw a detailed error on failure.
  *
@@ -94,6 +107,12 @@ function findTask(plan: ParsedPlan, taskId: string): TaskNode {
   const task = plan.tasksById.get(taskId);
   if (!task) throw new Error(`Task not found: ${taskId}`);
   return task;
+}
+
+function findFirstH1Line(lines: string[]): number {
+  const line = lines.findIndex((l) => l.match(/^#\s+/));
+  if (line === -1) throw new Error('Missing plan title heading (# ...)');
+  return line;
 }
 
 /**
@@ -253,6 +272,7 @@ export function applyDelete(text: string, taskId: string): EditResult {
 export interface AddTaskOptions {
   title: string;
   status: TaskStatus;
+  bodyMarkdown?: string;
   sectionPath?: string[];
   parentTaskId?: string;
   beforeTaskId?: string;
@@ -324,7 +344,11 @@ export function applyAddTask(text: string, options: AddTaskOptions): { taskId: s
   }
 
   const taskLine = createTaskLine(indent, options.status, options.title, taskId);
-  lines.splice(insertAt, 0, taskLine);
+  const insertLines: string[] = [taskLine];
+  if (options.bodyMarkdown !== undefined) {
+    insertLines.push(...encodeBlockquoteBody(options.bodyMarkdown, indent + 2));
+  }
+  lines.splice(insertAt, 0, ...insertLines);
 
   const newText = joinLines(lines, eol, true);
   const validation = validatePlanMarkdown(newText);
@@ -333,4 +357,93 @@ export function applyAddTask(text: string, options: AddTaskOptions): { taskId: s
   }
 
   return { taskId, newText };
+}
+
+/**
+ * Replace (or clear) the structured blockquote body for a task.
+ *
+ * The body is stored as an indented blockquote run immediately after the task line.
+ * This edit only touches the body lines (minimal diff).
+ */
+export function applySetTaskBody(text: string, taskId: string, bodyMarkdown: string | null): EditResult {
+  const plan = requireParsedPlan(text);
+  const task = findTask(plan, taskId);
+
+  const { lines, eol, endsWithNewline } = splitLines(text);
+  const existing = task.bodyRange;
+
+  if (bodyMarkdown === null) {
+    if (!existing) return { newText: text, changed: false };
+    lines.splice(existing.startLine, existing.endLine - existing.startLine + 1);
+  } else {
+    const encoded = encodeBlockquoteBody(bodyMarkdown, task.indent + 2);
+    if (existing) {
+      lines.splice(existing.startLine, existing.endLine - existing.startLine + 1, ...encoded);
+    } else {
+      lines.splice(task.line + 1, 0, ...encoded);
+    }
+  }
+
+  const newText = joinLines(lines, eol, endsWithNewline);
+  const validation = validatePlanMarkdown(newText);
+  if (validation.errors.length > 0) {
+    throw new Error(`Edit produced invalid document: ${validation.errors[0]?.message ?? 'unknown error'}`);
+  }
+  return { newText, changed: newText !== text };
+}
+
+/**
+ * Replace (or clear) the plan-level body blockquote under the first H1.
+ */
+export function applySetPlanBody(text: string, bodyMarkdown: string | null): EditResult {
+  const plan = requireParsedPlan(text);
+  const { lines, eol, endsWithNewline } = splitLines(text);
+
+  const h1Line = findFirstH1Line(lines);
+  const existing = plan.bodyRange;
+
+  if (bodyMarkdown === null) {
+    if (!existing) return { newText: text, changed: false };
+    lines.splice(existing.startLine, existing.endLine - existing.startLine + 1);
+  } else {
+    const encoded = encodeBlockquoteBody(bodyMarkdown, 0);
+    if (existing) {
+      lines.splice(existing.startLine, existing.endLine - existing.startLine + 1, ...encoded);
+    } else {
+      let insertAt = h1Line + 1;
+      while (insertAt < lines.length && lines[insertAt]?.trim() === '') insertAt += 1;
+      lines.splice(insertAt, 0, ...encoded);
+    }
+  }
+
+  const newText = joinLines(lines, eol, endsWithNewline);
+  const validation = validatePlanMarkdown(newText);
+  if (validation.errors.length > 0) {
+    throw new Error(`Edit produced invalid document: ${validation.errors[0]?.message ?? 'unknown error'}`);
+  }
+  return { newText, changed: newText !== text };
+}
+
+/**
+ * Update the plan title (the first H1 line) in-place.
+ *
+ * Only the single H1 line changes (minimal diff).
+ */
+export function applySetPlanTitle(text: string, title: string): EditResult {
+  const safeTitle = sanitizePlanTitle(title);
+  const { lines, eol, endsWithNewline } = splitLines(text);
+
+  const h1Line = findFirstH1Line(lines);
+  const existing = lines[h1Line];
+  if (existing === undefined) throw new Error(`Invalid title line index: ${h1Line}`);
+  if (!existing.match(/^#\s+/)) throw new Error('Failed to update plan title (missing H1)');
+
+  lines[h1Line] = `# ${safeTitle}`;
+
+  const newText = joinLines(lines, eol, endsWithNewline);
+  const validation = validatePlanMarkdown(newText);
+  if (validation.errors.length > 0) {
+    throw new Error(`Edit produced invalid document: ${validation.errors[0]?.message ?? 'unknown error'}`);
+  }
+  return { newText, changed: newText !== text };
 }
