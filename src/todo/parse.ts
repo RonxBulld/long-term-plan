@@ -78,6 +78,159 @@ function lineIndent(line: string): number {
   return count;
 }
 
+/**
+ * True if the line is a blockquote line (after trimming leading spaces).
+ *
+ * We use blockquotes as the on-disk encoding for multi-line plan/task bodies so
+ * body content can freely include `- [ ]` without being mistaken for a task line.
+ */
+function isBlockquoteLine(line: string): boolean {
+  return line.trimStart().startsWith('>');
+}
+
+/**
+ * Decode a single blockquote line by stripping:
+ * - leading spaces
+ * - a single leading `>`
+ * - an optional single space following the `>`
+ */
+function decodeBlockquoteLine(line: string): string {
+  const trimmed = line.trimStart();
+  if (!trimmed.startsWith('>')) return '';
+  const rest = trimmed.slice(1);
+  return rest.startsWith(' ') ? rest.slice(1) : rest;
+}
+
+/**
+ * Parse a plan-level blockquote body under the first H1.
+ *
+ * Body detection is intentionally strict and conservative:
+ * - we skip blank lines after the H1
+ * - we only treat the first contiguous blockquote run as the plan body
+ */
+function parsePlanBody(lines: string[], h1Line: number | undefined): {
+  hasBody: boolean;
+  bodyMarkdown?: string;
+  bodyRange?: { startLine: number; endLine: number };
+} {
+  if (h1Line === undefined) return { hasBody: false };
+
+  let index = h1Line + 1;
+  while (index < lines.length && isBlankLine(lines[index] ?? '')) index += 1;
+  if (index >= lines.length) return { hasBody: false };
+
+  const first = lines[index] ?? '';
+  if (!isBlockquoteLine(first)) return { hasBody: false };
+
+  const startLine = index;
+  const decoded: string[] = [];
+  while (index < lines.length) {
+    const line = lines[index] ?? '';
+    if (!isBlockquoteLine(line)) break;
+    decoded.push(decodeBlockquoteLine(line));
+    index += 1;
+  }
+
+  return {
+    hasBody: true,
+    bodyMarkdown: decoded.join('\n'),
+    bodyRange: { startLine, endLine: index - 1 },
+  };
+}
+
+/**
+ * Parse a task-level blockquote body immediately after a strict task line.
+ *
+ * The body is a contiguous run where each line:
+ * - has indent >= `taskIndent + 2`
+ * - is a blockquote line (`>` after leading spaces)
+ */
+function parseTaskBody(
+  lines: string[],
+  taskLine: number,
+  taskIndent: number
+): {
+  hasBody: boolean;
+  bodyMarkdown?: string;
+  bodyRange?: { startLine: number; endLine: number };
+  endLineExclusive: number;
+} {
+  let index = taskLine + 1;
+  if (index >= lines.length) return { hasBody: false, endLineExclusive: taskLine + 1 };
+
+  const decoded: string[] = [];
+  const startLine = index;
+
+  while (index < lines.length) {
+    const line = lines[index] ?? '';
+    if (lineIndent(line) < taskIndent + 2) break;
+    if (!isBlockquoteLine(line)) break;
+    decoded.push(decodeBlockquoteLine(line));
+    index += 1;
+  }
+
+  if (decoded.length === 0) return { hasBody: false, endLineExclusive: taskLine + 1 };
+
+  return {
+    hasBody: true,
+    bodyMarkdown: decoded.join('\n'),
+    bodyRange: { startLine, endLine: index - 1 },
+    endLineExclusive: index,
+  };
+}
+
+/**
+ * Close tasks when we hit a block boundary (indentation returns to the same or shallower level).
+ *
+ * This computes `blockEndLine` so delete/edit operations can safely target the full indented block.
+ */
+function closeTasksAtBoundary(openTasks: OpenTaskFrame[], boundaryLine: number, indent: number): void {
+  while (openTasks.length > 0) {
+    const top = openTasks[openTasks.length - 1];
+    if (!top) break;
+    if (indent > top.task.indent) break;
+    top.task.blockEndLine = boundaryLine - 1;
+    openTasks.pop();
+  }
+}
+
+/**
+ * Close all open tasks at a boundary (used when entering headings or end-of-file).
+ */
+function closeAllTasksAtBoundary(openTasks: OpenTaskFrame[], boundaryLine: number): void {
+  while (openTasks.length > 0) {
+    const top = openTasks.pop();
+    if (!top) continue;
+    top.task.blockEndLine = boundaryLine - 1;
+  }
+}
+
+/**
+ * Close headings when we see a heading at the same or higher level.
+ *
+ * This computes `endLine` for each heading so sections can be addressed by range.
+ */
+function closeHeadingsAtBoundary(
+  headingStack: HeadingFrame[],
+  headingIndexStack: number[],
+  headings: Heading[],
+  boundaryLine: number,
+  level: number
+): void {
+  while (headingStack.length > 0) {
+    const top = headingStack[headingStack.length - 1];
+    if (!top) break;
+    if (top.level < level) break;
+    const headingIndex = headingIndexStack.pop();
+    headingStack.pop();
+    if (headingIndex === undefined) continue;
+    headings[headingIndex] = {
+      ...headings[headingIndex],
+      endLine: boundaryLine - 1,
+    };
+  }
+}
+
 function buildHeadingPath(frames: HeadingFrame[], includeH1: boolean): string[] {
   const filtered = includeH1 ? frames : frames.filter((frame) => frame.level >= 2);
   return filtered.map((frame) => frame.text);
@@ -120,59 +273,24 @@ export function parsePlanMarkdown(text: string): ParsePlanResult {
   const tasksById = new Map<string, TaskNode>();
   const openTasks: OpenTaskFrame[] = [];
 
-  // When we encounter a task, we treat it as the start of a "block" which ends
-  // when we see a line with indentation <= the task's indentation.
-  function closeTasksAtBoundary(boundaryLine: number, indent: number): void {
-    while (openTasks.length > 0) {
-      const top = openTasks[openTasks.length - 1];
-      if (!top) break;
-      if (indent > top.task.indent) break;
-      top.task.blockEndLine = boundaryLine - 1;
-      openTasks.pop();
-    }
-  }
-
-  function closeAllTasksAtBoundary(boundaryLine: number): void {
-    while (openTasks.length > 0) {
-      const top = openTasks.pop();
-      if (!top) continue;
-      top.task.blockEndLine = boundaryLine - 1;
-    }
-  }
-
-  // Similar to tasks, headings define a section range. We close headings when we
-  // see a heading at the same or higher level.
-  function closeHeadingsAtBoundary(boundaryLine: number, level: number): void {
-    while (headingStack.length > 0) {
-      const top = headingStack[headingStack.length - 1];
-      if (!top) break;
-      if (top.level < level) break;
-      const headingIndex = headingIndexStack.pop();
-      headingStack.pop();
-      if (headingIndex === undefined) continue;
-      headings[headingIndex] = {
-        ...headings[headingIndex],
-        endLine: boundaryLine - 1,
-      };
-    }
-  }
-
   let planTitle = 'Untitled Plan';
+  let firstH1Line: number | undefined;
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex] ?? '';
 
     const headingMatch = line.match(HEADING_RE);
     if (headingMatch) {
-      closeAllTasksAtBoundary(lineIndex);
+      closeAllTasksAtBoundary(openTasks, lineIndex);
 
       const level = headingMatch[1]?.length ?? 1;
       const headingText = (headingMatch[2] ?? '').trim();
-      if (level === 1 && headingText) {
+      if (level === 1 && headingText && firstH1Line === undefined) {
         planTitle = headingText;
+        firstH1Line = lineIndex;
       }
 
-      closeHeadingsAtBoundary(lineIndex, level);
+      closeHeadingsAtBoundary(headingStack, headingIndexStack, headings, lineIndex, level);
       headingStack.push({ level, text: headingText, line: lineIndex });
       headings.push({
         level,
@@ -189,7 +307,7 @@ export function parsePlanMarkdown(text: string): ParsePlanResult {
 
     const parsedTask = parseTaskLineStrict(line);
     if (parsedTask) {
-      closeTasksAtBoundary(lineIndex, parsedTask.indent);
+      closeTasksAtBoundary(openTasks, lineIndex, parsedTask.indent);
 
       const sectionPath = buildHeadingPath(headingStack, includeH1InSectionPath);
       const status = symbolToStatus(parsedTask.symbol);
@@ -198,12 +316,21 @@ export function parsePlanMarkdown(text: string): ParsePlanResult {
         id: parsedTask.id,
         title: parsedTask.title,
         status,
+        hasBody: false,
         indent: parsedTask.indent,
         line: lineIndex,
         blockEndLine: lines.length - 1,
         sectionPath,
         children: [],
       };
+
+      const body = parseTaskBody(lines, lineIndex, task.indent);
+      if (body.hasBody) {
+        task.hasBody = true;
+        task.bodyMarkdown = body.bodyMarkdown;
+        task.bodyRange = body.bodyRange;
+        lineIndex = body.endLineExclusive - 1;
+      }
 
       if (tasksById.has(task.id)) {
         errors.push(
@@ -234,18 +361,20 @@ export function parsePlanMarkdown(text: string): ParsePlanResult {
       if (openTasks.length > 0) {
         const top = openTasks[openTasks.length - 1];
         if (top && indent <= top.task.indent) {
-          closeTasksAtBoundary(lineIndex, indent);
+          closeTasksAtBoundary(openTasks, lineIndex, indent);
         }
       }
     }
   }
 
-  closeAllTasksAtBoundary(lines.length);
-  closeHeadingsAtBoundary(lines.length, 1);
+  closeAllTasksAtBoundary(openTasks, lines.length);
+  closeHeadingsAtBoundary(headingStack, headingIndexStack, headings, lines.length, 1);
 
   if (headerLine !== -1 && tasksById.size === 0) {
     warnings.push(warningDiagnostic('NO_TASKS', 'No tasks found in document.'));
   }
+
+  const planBody = parsePlanBody(lines, firstH1Line);
 
   const ok = errors.length === 0;
   return {
@@ -253,6 +382,9 @@ export function parsePlanMarkdown(text: string): ParsePlanResult {
     plan: ok
       ? {
           title: planTitle,
+          hasBody: planBody.hasBody,
+          bodyMarkdown: planBody.bodyMarkdown,
+          bodyRange: planBody.bodyRange,
           headings,
           rootTasks,
           tasksById,

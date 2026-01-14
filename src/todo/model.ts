@@ -29,6 +29,12 @@ export interface TaskNode {
   title: string;
   /** Normalized task status. */
   status: TaskStatus;
+  /** True if the task has a structured blockquote body immediately after its task line. */
+  hasBody: boolean;
+  /** Optional decoded task body (raw Markdown, without `>` prefixes). */
+  bodyMarkdown?: string;
+  /** 0-based inclusive line range for the encoded body block (for minimal-diff edits). */
+  bodyRange?: { startLine: number; endLine: number };
   /** Indent (leading spaces) used to infer parent/child relationships. */
   indent: number;
   /** 0-based line index where the task line starts. */
@@ -46,6 +52,12 @@ export interface TaskNode {
 export interface ParsedPlan {
   /** Title derived from the first H1 heading (or a fallback). */
   title: string;
+  /** True if the plan has a structured blockquote body under the first H1. */
+  hasBody: boolean;
+  /** Optional decoded plan body (raw Markdown, without `>` prefixes). */
+  bodyMarkdown?: string;
+  /** 0-based inclusive line range for the encoded plan body block (for minimal-diff edits). */
+  bodyRange?: { startLine: number; endLine: number };
   /** All headings with computed section ranges. */
   headings: Heading[];
   /** Top-level tasks (not nested under another task). */
