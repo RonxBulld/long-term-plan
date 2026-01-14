@@ -214,7 +214,7 @@ RepairAction (suggest starting with a minimal set)
 ## 9. Testing suggestions (Ensure testability)
 - `parse(text) -> DocModel` as a pure function: cover indentation, sections, mixed body text, and invalid lines via test fixtures.
 - `applyEdit(text, op) -> { newText, changedRanges }`: assert minimal diffs (only touch target lines).
-- fixtures/golden: use real `.long-term-plan/*.md` samples for snapshot tests.
+- fixtures/golden: use real `examples/plans/*.md` samples for snapshot tests.
 
 ## 10. Blockquote bodies (Implementation-oriented spec)
 

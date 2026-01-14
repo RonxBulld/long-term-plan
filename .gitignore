@@ -5,7 +5,8 @@ node_modules/
 dist/
 *.tsbuildinfo
 
-# Tool cache only (plans live in `.long-term-plan/`)
+# Local tool data (default plans dir is `.long-term-plan/`; keep out of git)
+.long-term-plan/*.md
 .long-term-plan/index.json
 .long-term-plan/.cache/
 .long-term-plan/*.tmp.*
