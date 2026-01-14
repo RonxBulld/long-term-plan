@@ -82,13 +82,19 @@ A task must be an “unordered list item + status box + title + trailing ID comm
 > Parsing rule: only list items that match the task-line syntax are recognized as Tasks; other list items at the same level or in sublevels are treated as notes/body text and are preserved but not structurally parsed.
 
 ### 3.4 Task body (Optional, preserved but not strongly parsed)
-You can write notes, links, plain list items, etc. under a task (the machine does minimal interpretation and tries to preserve the original text on write-back):
+Free-form content can appear under a task line. Important: the validator treats any line that looks like a task list item (e.g. `- [ ] ...`) as a task candidate and requires a trailing id comment.
+
+To store arbitrary Markdown (checkboxes, code blocks, tables) as a task body without impacting strict task validation, encode the body as a blockquote block under the task (see §10).
+
+Example (blockquote body):
 
 ```md
 - [*] Explore approaches <!-- long-term-plan:id=t_R -->
-  - Background: ...
-  - Links: ...
-  - Risks: ...
+  > - [ ] checklist item (body, not a task)
+  >
+  > ```ts
+  > // code fences and tables are allowed inside the body
+  > ```
 ```
 
 ### 3.5 Conflict-minimizing write constraints (Key)
@@ -146,8 +152,9 @@ To minimize merge conflicts and large diffs, the write strategy follows:
 
 ### 6.1 Plan (Plan files)
 - `plan.list({ query?, limit?, cursor? }) -> { plans: PlanSummary[], nextCursor? }`
-- `plan.get({ planId, view?: "tree"|"flat", limit?, cursor? }) -> { plan, etag, nextCursor? }`
-- `plan.create({ planId, title, template?: "empty"|"basic" }) -> { planId, path }`
+- `plan.get({ planId, view?: "tree"|"flat", includeTaskBodies?: boolean, includePlanBody?: boolean, limit?, cursor? }) -> { plan, etag, nextCursor? }`
+- `plan.create({ planId, title, template?: "empty"|"basic", bodyMarkdown? }) -> { planId, path }`
+- `plan.update({ planId, title?, bodyMarkdown?, clearBody?, ifMatch? }) -> { etag }`
 
 PlanSummary (example)
 ```json
@@ -160,14 +167,15 @@ PlanSummary (example)
 ```
 
 ### 6.2 Task (Tasks)
-- `task.get({ planId, taskId? }) -> { task, etag }`
-- `task.add({ planId, title, status?, sectionPath?, parentTaskId?, ifMatch }) -> { taskId, etag }`
-- `task.update({ planId, taskId?, status?, title?, allowDefaultTarget?, ifMatch }) -> { etag, taskId }`
+- `task.get({ planId, taskId?, includeBody?: boolean }) -> { task, etag }`
+- `task.add({ planId, title, status?, bodyMarkdown?, sectionPath?, parentTaskId?, ifMatch }) -> { taskId, etag }`
+- `task.update({ planId, taskId?, status?, title?, bodyMarkdown?, clearBody?, allowDefaultTarget?, ifMatch }) -> { etag, taskId }`
 - `task.delete({ planId, taskId, ifMatch }) -> { etag }`
 - `task.search({ planId, query, status?, limit?, cursor? }) -> { hits: TaskHit[], nextCursor? }`
 
 Default behavior:
 - If `taskId` is omitted: prefer the first `doing`; if none are `doing`, select the first not-yet-done task from top to bottom
+- `task.get` defaults `includeBody=true`; `plan.get` defaults `includeTaskBodies=false` and `includePlanBody=false`
 
 Write safety valve (recommended):
 - If `task.update` omits `taskId`: must explicitly set `allowDefaultTarget=true` and provide `ifMatch` (etag) to avoid “target drift”
@@ -207,3 +215,164 @@ RepairAction (suggest starting with a minimal set)
 - `parse(text) -> DocModel` as a pure function: cover indentation, sections, mixed body text, and invalid lines via test fixtures.
 - `applyEdit(text, op) -> { newText, changedRanges }`: assert minimal diffs (only touch target lines).
 - fixtures/golden: use real `.long-term-plan/*.md` samples for snapshot tests.
+
+## 10. Blockquote bodies (Implementation-oriented spec)
+
+This spec extends long-term-plan-md v1 with an on-disk body encoding that:
+- stays within a single Markdown file
+- allows arbitrary Markdown in bodies (checkboxes, code fences, tables)
+- does not affect strict task-line validation (because body lines do not start with `-`)
+
+### 10.1 On-disk encoding and boundary rules
+
+#### 10.1.1 Task body (blockquote block)
+
+**Purpose:** allow `bodyMarkdown` to contain arbitrary Markdown (including `- [ ]`) without producing `MISSING_TASK_ID` validation errors.
+
+**On-disk location**
+- The task body block is stored immediately after the strict task line, and before any child tasks or other content in that task block.
+- Only the first contiguous task-body block is considered structured `bodyMarkdown`. Any later blockquote runs are treated as unstructured text.
+
+**Write rule (encode)**
+- Let `taskIndent` be the number of leading spaces on the strict task line.
+- Each encoded body line MUST use exactly `taskIndent + 2` leading spaces.
+- Encoding for each logical body line:
+  - non-empty line `L` → `"{spaces}> {L}"`
+  - empty line → `"{spaces}>"`
+
+**Read rule (decode)**
+- Starting at the line immediately after the strict task line:
+  - A line is part of the task body iff:
+    - it has `indent >= taskIndent + 2`, and
+    - after trimming leading spaces it starts with `>`.
+  - The body is the maximal contiguous run of such lines.
+- For each encoded body line:
+  - remove leading spaces
+  - remove the first `>`
+  - then remove one optional following space (so both `>` and `> ` are accepted)
+- `bodyMarkdown` is the decoded lines joined with `\n` (preserving empty lines).
+
+**Note on blank lines**
+- Blank lines inside a body should be encoded as `>` lines. Plain blank lines are allowed in Markdown, but are not part of the structured body under this spec.
+
+#### 10.1.2 Plan body (blockquote block)
+
+**Purpose:** allow a plan-level description with arbitrary Markdown without affecting strict task validation.
+
+**On-disk location**
+- The plan body block is stored after the first H1 title line (`# ...`), after optional blank lines.
+- The plan body ends at the first non-blockquote line.
+
+**Write rule (encode)**
+- Each encoded plan-body line is written at indentation level 0:
+  - non-empty line `L` → `"> {L}"`
+  - empty line → `">"`
+
+**Read rule (decode)**
+- Find the first H1 title line (`^#\s+`), then scan forward:
+  - skip blank lines
+  - if the next line is a blockquote line (`trimStart().startsWith('>')`), that begins the plan body
+  - the plan body is the maximal contiguous run of blockquote lines
+- Decode each plan-body line using the same `>` / optional space stripping rules as task bodies.
+
+### 10.2 API and tool contract (field-level)
+
+This section defines the proposed inputs/outputs for bodies. It is intentionally concrete so it can be implemented without guesswork.
+
+#### 10.2.1 Tool inputs (new/updated fields)
+
+| Tool | Field | Type | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `task.get` | `includeBody` | `boolean` | `true` | When `false`, omit `task.bodyMarkdown` but still return `task.hasBody`. |
+| `plan.get` | `includeTaskBodies` | `boolean` | `false` | When `true`, include per-task `bodyMarkdown` (can be large). |
+| `plan.get` | `includePlanBody` | `boolean` | `false` | When `true`, include `plan.bodyMarkdown`. |
+| `task.add` | `bodyMarkdown` | `string` | _(omitted)_ | Raw Markdown (no `>` prefixes); encoded to a blockquote body on write. |
+| `task.update` | `bodyMarkdown` | `string` | _(omitted)_ | Replace the structured body with this Markdown. |
+| `task.update` | `clearBody` | `boolean` | `false` | If `true`, remove the structured body block. Must not be combined with `bodyMarkdown`. |
+| `plan.create` | `bodyMarkdown` | `string` | _(omitted)_ | Optional plan-level body placed under the H1 title. |
+| `plan.update` | `bodyMarkdown` | `string` | _(omitted)_ | Replace the plan-level body with this Markdown. |
+| `plan.update` | `clearBody` | `boolean` | `false` | Remove the plan-level body. Must not be combined with `bodyMarkdown`. |
+
+#### 10.2.2 Body normalization (write)
+
+- `bodyMarkdown` is treated as raw text and MAY contain any characters, including newlines.
+- Implementations SHOULD normalize line endings to `\n` before encoding to blockquote lines.
+
+### 10.3 JSON output contract (field lists)
+
+All tools return an `etag` sibling to the main object (`plan` or `task`), as today.
+
+#### 10.3.1 `plan.get` output (`view="tree"`)
+
+`{ plan, etag }` where `plan` has:
+
+| Field | Type | Presence | Notes |
+| --- | --- | --- | --- |
+| `planId` | `string` | always | |
+| `title` | `string` | always | From the first H1 title line. |
+| `format` | `{ name: "long-term-plan-md", version: "v1" }` | always | |
+| `stats` | `{ total:number, todo:number, doing:number, done:number }` | always | |
+| `view` | `"tree"` | always | |
+| `hasBody` | `boolean` | always | `true` iff a plan body block exists on disk. |
+| `bodyMarkdown` | `string` | when `includePlanBody && hasBody` | Decoded plan body Markdown (no `>` prefixes). |
+| `tasks` | `TaskTreeNode[]` | always | |
+
+`TaskTreeNode` fields:
+
+| Field | Type | Presence | Notes |
+| --- | --- | --- | --- |
+| `id` | `string` | always | Stable `t_...` id. |
+| `title` | `string` | always | Single-line title from the strict task line. |
+| `status` | `"todo" \| "doing" \| "done"` | always | |
+| `sectionPath` | `string[]` | always | Heading path, excluding H1. |
+| `parentId` | `string` | when nested | |
+| `hasBody` | `boolean` | always | `true` iff a task body block exists on disk. |
+| `bodyMarkdown` | `string` | when `includeTaskBodies && hasBody` | Decoded task body Markdown (no `>` prefixes). |
+| `children` | `TaskTreeNode[]` | always | |
+
+#### 10.3.2 `plan.get` output (`view="flat"`)
+
+`plan.tasks` is a list of `TaskFlatRow`:
+
+| Field | Type | Presence | Notes |
+| --- | --- | --- | --- |
+| `id` | `string` | always | |
+| `title` | `string` | always | |
+| `status` | `"todo" \| "doing" \| "done"` | always | |
+| `sectionPath` | `string[]` | always | |
+| `parentId` | `string` | when nested | |
+| `hasBody` | `boolean` | always | |
+| `bodyMarkdown` | `string` | when `includeTaskBodies && hasBody` | May be large; prefer `task.get` for interactive use. |
+
+#### 10.3.3 `task.get` output
+
+`{ task, etag }` where `task` has:
+
+| Field | Type | Presence | Notes |
+| --- | --- | --- | --- |
+| `id` | `string` | always | |
+| `title` | `string` | always | |
+| `status` | `"todo" \| "doing" \| "done"` | always | |
+| `sectionPath` | `string[]` | always | |
+| `parentId` | `string` | when nested | |
+| `childrenCount` | `number` | always | Direct children count. |
+| `hasBody` | `boolean` | always | |
+| `bodyMarkdown` | `string` | when `includeBody && hasBody` | Decoded task body Markdown (no `>` prefixes). |
+
+### 10.4 Error messages (stable strings)
+
+This table defines error messages that SHOULD be stable for automation/scripting. The current implementation uses plain thrown errors; these are the recommended message strings.
+
+| Condition | Message |
+| --- | --- |
+| `task.update` called without any of `status/title/bodyMarkdown/clearBody` | `At least one of status, title, bodyMarkdown, or clearBody is required` |
+| `plan.update` called without any of `title/bodyMarkdown/clearBody` | `At least one of title, bodyMarkdown, or clearBody is required` |
+| `bodyMarkdown` combined with `clearBody=true` | `bodyMarkdown cannot be combined with clearBody` |
+| `task.update` omits `taskId` without explicit opt-in | `taskId is required unless allowDefaultTarget=true` |
+| `task.update` omits `taskId` without `ifMatch` | `ifMatch is required when taskId is omitted` |
+| Default-target write but multiple doing tasks exist | `AMBIGUOUS: multiple doing tasks; provide taskId` |
+| Optimistic concurrency etag mismatch | `CONFLICT: etag mismatch (current=<etag>, ifMatch=<etag>)` |
+| Task id not found | `Task not found: <taskId>` |
+| Plan already exists on create | `Plan already exists: <planId>` |
+| Plan body requested/updated but no H1 exists | `Missing plan title heading (# ...)` |
+| A write requires parsing but the plan is invalid | Newline-separated parse diagnostics in the form `<CODE>@<line>: <message>` (1-based lines), or `Failed to parse plan` |

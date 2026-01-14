@@ -51,6 +51,9 @@ Common scenarios:
 - Create: `ltp plan create <planId> --title "..." [--template empty|basic]`
   - Defaults: `--template=basic`.
   - `--template basic` creates an `## Inbox` section; `empty` creates only the header + title.
+- Update: `ltp plan update <planId> [--title "..."] [--body <text>|--body-file <path>|--body-stdin|--clear-body] [--if-match <etag>]`
+  - Defaults: none (no changes unless you pass a field).
+  - Body flags are mutually exclusive; use only one of `--body`, `--body-file`, `--body-stdin`, `--clear-body`.
 
 ## Task commands
 
@@ -58,8 +61,10 @@ Common scenarios:
   - Defaults: pick the first `doing` task (top-to-bottom order); otherwise pick the first task that is not `done`.
 - Get a task: `ltp task get <planId> [taskId]`
   - Defaults: omit `taskId` → pick the first `doing` task; otherwise the first task that is not `done`.
+  - Includes the decoded task body (`bodyMarkdown`) by default when present.
 - Add: `ltp task add <planId> --title "..." [--status todo|doing|done] [--section <path>] [--parent <taskId>] [--before <taskId>] [--if-match <etag>]`
   - Defaults: `--status=todo`; no placement flags → insert at end-of-file; `--if-match` omitted → no concurrency guard.
+  - Optional body flags: `--body <text>|--body-file <path>|--body-stdin` (mutually exclusive).
   - `--section "A/B/C"` is a heading path (uses Markdown `##` for `A`, `###` for `B`, etc.).
   - Placement rules (highest priority first):
     - `--before <taskId>` inserts immediately before that task (as a sibling).
@@ -67,9 +72,10 @@ Common scenarios:
     - `--section <path>` inserts under that section (creating headings at EOF if missing).
     - otherwise inserts at end-of-file.
   - Do not combine `--before` with `--parent` or `--section`.
-- Update: `ltp task update <planId> [taskId] [--status todo|doing|done] [--title "..."] [--allow-default] [--if-match <etag>]`
+- Update: `ltp task update <planId> [taskId] [--status todo|doing|done] [--title "..."] [--body <text>|--body-file <path>|--body-stdin|--clear-body] [--allow-default] [--if-match <etag>]`
   - Defaults: `--allow-default` is off; `--if-match` omitted → no concurrency guard.
-  - At least one of `--status` or `--title` is required.
+  - At least one of `--status`, `--title`, `--body*`, or `--clear-body` is required.
+  - Body flags are mutually exclusive; use only one of `--body`, `--body-file`, `--body-stdin`, `--clear-body`.
   - `--allow-default-target` is accepted as an alias for `--allow-default`.
   - If `taskId` is omitted, you must pass `--allow-default` and `--if-match`.
   - Default-target rule (when `taskId` is omitted):
@@ -113,3 +119,20 @@ Use `etag` + `--if-match` for optimistic concurrency on write commands that supp
 
 - Task id from “next”: `ltp task next <planId> | node -p 'JSON.parse(require("fs").readFileSync(0,"utf8")).task.id'`
 - New task id from “add”: `ltp task add <planId> --title "..." | node -p 'JSON.parse(require("fs").readFileSync(0,"utf8")).taskId'`
+
+## Body input examples
+
+- From a file:
+  - `ltp task update demo t_xxx --body-file ./notes.md`
+- From stdin (heredoc):
+  - Example:
+
+````bash
+ltp task update demo t_xxx --body-stdin <<'EOF'
+- [ ] checklist inside body
+
+```ts
+const x = 1
+```
+EOF
+````

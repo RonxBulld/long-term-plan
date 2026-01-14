@@ -79,6 +79,21 @@ Task lines must include a stable ID (a trailing comment) and use fixed status sy
 - [√] Done <!-- long-term-plan:id=t_zzz -->
 ```
 
+Multi-line plan/task bodies are supported via **blockquote blocks** so arbitrary Markdown (checkboxes, code blocks, tables) does not get treated as a task line by the strict validator:
+
+```md
+# Plan title
+
+> Plan description with `- [ ]` checkboxes is OK here.
+
+- [ ] Task title <!-- long-term-plan:id=t_task -->
+  > - [ ] checklist inside the task body
+  >
+  > ```ts
+  > const x = 1
+  > ```
+```
+
 Supports hierarchical tasks (2-space indentation) and sections (Markdown headings). The default plans directory is `.long-term-plan/` (relative to `--root`; override with `--plans`).
 
 Convention: all `plan.*` / `task.*` / `doc.*` tool calls must explicitly provide `planId`; this project does not provide an implicit default plan when `planId` is omitted.
@@ -87,7 +102,7 @@ You can also omit `taskId` in `task.update`, but you must provide `ifMatch` and 
 
 ## Server tools (stdio)
 
-- `plan.list` / `plan.get` / `plan.create`
+- `plan.list` / `plan.get` / `plan.create` / `plan.update`
 - `task.get` / `task.add` / `task.update` / `task.delete` / `task.search`
 
 ## Important Behavioral Guarantees
