@@ -3,7 +3,15 @@ import { basename, relative } from 'node:path';
 import type { LongTermPlanConfig } from '../config.js';
 import type { TaskNode, TaskStatus } from './model.js';
 import { parsePlanMarkdown, parseTaskLineStrict } from './parse.js';
-import { applyAddTask, applyDelete, applyRename, applySetStatus } from './edit.js';
+import {
+  applyAddTask,
+  applyDelete,
+  applyRename,
+  applySetPlanBody,
+  applySetPlanTitle,
+  applySetStatus,
+  applySetTaskBody,
+} from './edit.js';
 import { validatePlanMarkdown } from './validate.js';
 import { repairPlanMarkdown, type RepairAction } from './repair.js';
 import { LONG_TERM_PLAN_FORMAT_HEADER } from './constants.js';
@@ -15,6 +23,7 @@ import {
   sha256Hex,
   writeFileAtomic,
 } from './storage.js';
+import { buildTaskTreeView, toTaskFlatRow } from './view.js';
 
 /**
  * Public API for plan/task operations.
@@ -182,6 +191,8 @@ export async function listPlans(
 export interface GetPlanOptions {
   planId: string;
   view?: 'tree' | 'flat';
+  includeTaskBodies?: boolean;
+  includePlanBody?: boolean;
 }
 
 /**
@@ -207,25 +218,25 @@ export async function getPlan(
 
   const stats = computeStats(text);
   const view = options.view ?? 'tree';
+  const includeTaskBodies = options.includeTaskBodies ?? false;
+  const includePlanBody = options.includePlanBody ?? false;
   const tasks =
     view === 'tree'
-      ? parsed.plan.rootTasks
-      : flattenTasks(parsed.plan.rootTasks).map((task) => ({
-          id: task.id,
-          title: task.title,
-          status: task.status,
-          sectionPath: task.sectionPath,
-          parentId: task.parentId,
-        }));
+      ? buildTaskTreeView(parsed.plan.rootTasks, { includeBody: includeTaskBodies })
+      : flattenTasks(parsed.plan.rootTasks).map((task) =>
+          toTaskFlatRow(task, { includeBody: includeTaskBodies })
+        );
 
-  const plan = {
+  const plan: Record<string, unknown> = {
     planId: options.planId,
     title: parsed.plan.title,
     format: { name: 'long-term-plan-md', version: 'v1' },
     stats,
     view,
+    hasBody: parsed.plan.hasBody,
     tasks,
   };
+  if (includePlanBody && parsed.plan.hasBody) plan.bodyMarkdown = parsed.plan.bodyMarkdown;
 
   return { plan, etag };
 }
@@ -234,6 +245,7 @@ export interface CreatePlanOptions {
   planId: string;
   title: string;
   template?: 'empty' | 'basic';
+  bodyMarkdown?: string;
 }
 
 /**
@@ -265,7 +277,10 @@ export async function createPlan(
     parts.push('## Inbox', '');
   }
 
-  const text = `${parts.join('\n')}\n`;
+  let text = `${parts.join('\n')}\n`;
+  if (options.bodyMarkdown !== undefined) {
+    text = applySetPlanBody(text, options.bodyMarkdown).newText;
+  }
   await writeFileAtomic(absolutePath, text);
 
   return { planId, path: relative(config.rootDir, absolutePath) };
@@ -274,6 +289,7 @@ export async function createPlan(
 export interface GetTaskOptions {
   planId: string;
   taskId?: string;
+  includeBody?: boolean;
 }
 
 /**
@@ -291,6 +307,7 @@ export async function getTask(
   const parsed = parsePlanMarkdown(text);
   if (!parsed.ok || !parsed.plan) throw new Error('Failed to parse plan');
 
+  const includeBody = options.includeBody ?? true;
   let task: TaskNode | undefined;
   if (options.taskId) {
     assertSafeId('taskId', options.taskId);
@@ -302,17 +319,18 @@ export async function getTask(
     if (!task) throw new Error(`Task not found: ${taskId}`);
   }
 
-  return {
-    task: {
-      id: task.id,
-      title: task.title,
-      status: task.status,
-      sectionPath: task.sectionPath,
-      parentId: task.parentId,
-      childrenCount: task.children.length,
-    },
-    etag,
+  const outTask: Record<string, unknown> = {
+    id: task.id,
+    title: task.title,
+    status: task.status,
+    sectionPath: task.sectionPath,
+    parentId: task.parentId,
+    childrenCount: task.children.length,
+    hasBody: task.hasBody,
   };
+  if (includeBody && task.hasBody) outTask.bodyMarkdown = task.bodyMarkdown;
+
+  return { task: outTask, etag };
 }
 
 /**
@@ -328,6 +346,7 @@ function requireIfMatch(currentEtag: string, ifMatch: string | undefined): void 
 export interface TaskAddOptions {
   planId: string;
   title: string;
+  bodyMarkdown?: string;
   status?: TaskStatus;
   sectionPath?: string[];
   parentTaskId?: string;
@@ -347,6 +366,7 @@ export async function taskAdd(
 
   const { taskId, newText } = applyAddTask(text, {
     title: options.title,
+    bodyMarkdown: options.bodyMarkdown,
     status: options.status ?? 'todo',
     sectionPath: options.sectionPath,
     parentTaskId: options.parentTaskId,
@@ -362,6 +382,8 @@ export interface TaskUpdateOptions {
   taskId?: string;
   title?: string;
   status?: TaskStatus;
+  bodyMarkdown?: string;
+  clearBody?: boolean;
   ifMatch?: string;
   allowDefaultTarget?: boolean;
 }
@@ -377,8 +399,16 @@ export async function taskUpdate(
   config: LongTermPlanConfig,
   options: TaskUpdateOptions
 ): Promise<{ taskId: string; etag: string }> {
-  if (options.status === undefined && options.title === undefined) {
-    throw new Error('At least one of status or title is required');
+  if (options.bodyMarkdown !== undefined && options.clearBody) {
+    throw new Error('bodyMarkdown cannot be combined with clearBody');
+  }
+  if (
+    options.status === undefined &&
+    options.title === undefined &&
+    options.bodyMarkdown === undefined &&
+    !options.clearBody
+  ) {
+    throw new Error('At least one of status, title, bodyMarkdown, or clearBody is required');
   }
   if (!options.taskId && !options.allowDefaultTarget) {
     throw new Error('taskId is required unless allowDefaultTarget=true');
@@ -414,9 +444,68 @@ export async function taskUpdate(
     changed = changed || edit.changed;
   }
 
+  if (options.clearBody) {
+    const edit = applySetTaskBody(newText, taskId, null);
+    newText = edit.newText;
+    changed = changed || edit.changed;
+  } else if (options.bodyMarkdown !== undefined) {
+    const edit = applySetTaskBody(newText, taskId, options.bodyMarkdown);
+    newText = edit.newText;
+    changed = changed || edit.changed;
+  }
+
   if (!changed) return { taskId, etag };
   await writeFileAtomic(absolutePath, newText);
   return { taskId, etag: sha256Hex(newText) };
+}
+
+export interface PlanUpdateOptions {
+  planId: string;
+  title?: string;
+  bodyMarkdown?: string;
+  clearBody?: boolean;
+  ifMatch?: string;
+}
+
+/**
+ * Update a plan title and/or plan-level body blockquote.
+ */
+export async function planUpdate(
+  config: LongTermPlanConfig,
+  options: PlanUpdateOptions
+): Promise<{ etag: string }> {
+  if (options.bodyMarkdown !== undefined && options.clearBody) {
+    throw new Error('bodyMarkdown cannot be combined with clearBody');
+  }
+  if (options.title === undefined && options.bodyMarkdown === undefined && !options.clearBody) {
+    throw new Error('At least one of title, bodyMarkdown, or clearBody is required');
+  }
+
+  const { absolutePath, text, etag } = await readPlanFile(config, options.planId);
+  requireIfMatch(etag, options.ifMatch);
+
+  let newText = text;
+  let changed = false;
+
+  if (options.title !== undefined) {
+    const edit = applySetPlanTitle(newText, options.title);
+    newText = edit.newText;
+    changed = changed || edit.changed;
+  }
+
+  if (options.clearBody) {
+    const edit = applySetPlanBody(newText, null);
+    newText = edit.newText;
+    changed = changed || edit.changed;
+  } else if (options.bodyMarkdown !== undefined) {
+    const edit = applySetPlanBody(newText, options.bodyMarkdown);
+    newText = edit.newText;
+    changed = changed || edit.changed;
+  }
+
+  if (!changed) return { etag };
+  await writeFileAtomic(absolutePath, newText);
+  return { etag: sha256Hex(newText) };
 }
 
 export interface TaskDeleteOptions {
