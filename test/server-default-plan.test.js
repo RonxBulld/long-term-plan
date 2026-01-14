@@ -4,6 +4,16 @@
  * These tests ensure:
  * - tools are registered with the expected names
  * - `planId` is required in tool schemas (no implicit default plan)
+ *
+ * Additional guarantees:
+ * - Tool input schemas reject invalid plan/task ids up-front, so clients get a
+ *   fast, local validation error instead of a later filesystem/parse failure.
+ * - Optional id fields (like `task.add parentTaskId`) are still validated when
+ *   provided, preventing confusing “not found” errors caused by bad ids.
+ * - Schemas intentionally mirror the same safe-id rules enforced by storage.
+ * - This file keeps checks transport-free so failures are easy to debug.
+ * - Treat these as guardrails for agent-driven tool calls.
+ * - If this breaks, update docs and schemas together.
  */
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -73,6 +83,39 @@ test('MCP tools require explicit planId', () => {
   assert.equal(
     getTool(server, 'task.search').inputSchema.safeParse({ planId: 'demo', query: 'x' }).success,
     true
+  );
+});
+
+test('MCP tool schemas reject invalid planId/taskId values', () => {
+  const server = createMcpServer({ rootDir: '.', plansDir: '.long-term-plan' });
+
+  // planId must be a "safe id" (same rules as filenames).
+  assert.equal(getTool(server, 'plan.get').inputSchema.safeParse({ planId: '_bad' }).success, false);
+  assert.equal(getTool(server, 'plan.create').inputSchema.safeParse({ planId: '_bad', title: 'x' }).success, false);
+  assert.equal(
+    getTool(server, 'plan.update').inputSchema.safeParse({ planId: '_bad', title: 'x' }).success,
+    false
+  );
+
+  // taskId must be a "safe id" (same rules as ids in the markdown trailer).
+  assert.equal(getTool(server, 'task.get').inputSchema.safeParse({ planId: 'demo', taskId: '_bad' }).success, false);
+  assert.equal(
+    getTool(server, 'task.update').inputSchema.safeParse({ planId: 'demo', taskId: '_bad', status: 'todo' }).success,
+    false
+  );
+  assert.equal(
+    getTool(server, 'task.delete').inputSchema.safeParse({ planId: 'demo', taskId: '_bad' }).success,
+    false
+  );
+
+  // Optional task id fields should still be validated when present.
+  assert.equal(
+    getTool(server, 'task.add').inputSchema.safeParse({ planId: 'demo', title: 'x', parentTaskId: '_bad' }).success,
+    false
+  );
+  assert.equal(
+    getTool(server, 'task.add').inputSchema.safeParse({ planId: 'demo', title: 'x', beforeTaskId: '_bad' }).success,
+    false
   );
 });
 

@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import * as z from 'zod';
 import type { LongTermPlanConfig } from './config.js';
+import { SAFE_ID_RE } from './todo/id.js';
 import {
   createPlan,
   getPlan,
@@ -15,6 +16,9 @@ import {
   taskUpdate,
   validatePlanDoc,
 } from './todo/api.js';
+
+const planIdSchema = z.string().regex(SAFE_ID_RE, 'Invalid planId');
+const taskIdSchema = z.string().regex(SAFE_ID_RE, 'Invalid taskId');
 
 /**
  * MCP server entrypoint for long-term-plan tools.
@@ -76,7 +80,7 @@ function registerPlanGetTool(server: McpServer, config: LongTermPlanConfig): voi
       description:
         'Read and parse a plan markdown file. Returns tasks in tree or flat view; optional flags can include plan/task blockquote bodies.',
       inputSchema: {
-        planId: z.string(),
+        planId: planIdSchema,
         view: z.enum(['tree', 'flat']).optional(),
         includeTaskBodies: z.boolean().optional(),
         includePlanBody: z.boolean().optional(),
@@ -114,7 +118,7 @@ function registerPlanCreateTool(server: McpServer, config: LongTermPlanConfig): 
       title: 'Create a new plan file',
       description: 'Create a new plan markdown file in the plans directory (optionally with a plan body).',
       inputSchema: {
-        planId: z.string(),
+        planId: planIdSchema,
         title: z.string(),
         template: z.enum(['empty', 'basic']).optional(),
         bodyMarkdown: z.string().optional(),
@@ -148,7 +152,7 @@ function registerPlanUpdateTool(server: McpServer, config: LongTermPlanConfig): 
         'Update a plan title and/or plan-level blockquote body. For safe writes in concurrent environments, pass ifMatch (etag).',
       inputSchema: z
         .object({
-          planId: z.string(),
+          planId: planIdSchema,
           title: z.string().optional(),
           bodyMarkdown: z.string().optional(),
           clearBody: z.boolean().optional(),
@@ -201,8 +205,8 @@ function registerTaskGetTool(server: McpServer, config: LongTermPlanConfig): voi
       description:
         'Get a task from a plan (optionally including its decoded blockquote body). If taskId is omitted, defaults to the first "doing" task; otherwise the first unfinished task.',
       inputSchema: {
-        planId: z.string(),
-        taskId: z.string().optional(),
+        planId: planIdSchema,
+        taskId: taskIdSchema.optional(),
         includeBody: z.boolean().optional(),
       },
       outputSchema: {
@@ -234,13 +238,13 @@ function registerTaskAddTool(server: McpServer, config: LongTermPlanConfig): voi
         'Add a task to a plan (optionally under a section, under a parent task, or before another task). Can also write a blockquote body.',
       inputSchema: z
         .object({
-          planId: z.string(),
+          planId: planIdSchema,
           title: z.string(),
           bodyMarkdown: z.string().optional(),
           status: z.enum(['todo', 'doing', 'done']).optional(),
           sectionPath: z.array(z.string()).optional(),
-          parentTaskId: z.string().optional(),
-          beforeTaskId: z.string().optional(),
+          parentTaskId: taskIdSchema.optional(),
+          beforeTaskId: taskIdSchema.optional(),
           ifMatch: z.string().optional(),
         })
         .refine(
@@ -290,8 +294,8 @@ function registerTaskUpdateTool(server: McpServer, config: LongTermPlanConfig): 
         'Update a task in-place (minimal diff). You can update status/title and/or its decoded bodyMarkdown (stored on disk as an indented blockquote). If taskId is omitted, you must set allowDefaultTarget=true and provide ifMatch; the server will target the current doing task, else the first unfinished task.',
       inputSchema: z
         .object({
-          planId: z.string(),
-          taskId: z.string().optional(),
+          planId: planIdSchema,
+          taskId: taskIdSchema.optional(),
           status: z.enum(['todo', 'doing', 'done']).optional(),
           title: z.string().optional(),
           bodyMarkdown: z.string().optional(),
@@ -347,8 +351,8 @@ function registerTaskDeleteTool(server: McpServer, config: LongTermPlanConfig): 
       title: 'Delete a task',
       description: 'Delete a task (and its indented block) from a plan.',
       inputSchema: {
-        planId: z.string(),
-        taskId: z.string(),
+        planId: planIdSchema,
+        taskId: taskIdSchema,
         ifMatch: z.string().optional(),
       },
       outputSchema: { etag: z.string() },
@@ -375,7 +379,7 @@ function registerTaskSearchTool(server: McpServer, config: LongTermPlanConfig): 
       title: 'Search tasks',
       description: 'Search tasks by title substring (case-insensitive) within a plan.',
       inputSchema: {
-        planId: z.string(),
+        planId: planIdSchema,
         query: z.string(),
         status: z.enum(['todo', 'doing', 'done']).optional(),
         limit: z.number().int().min(1).max(500).optional(),
@@ -428,7 +432,7 @@ function registerValidateTool(server: McpServer, config: LongTermPlanConfig, nam
       title: 'Validate plan docs',
       description: 'Validate a plan markdown file against long-term-plan-md v1 format.',
       inputSchema: {
-        planId: z.string(),
+        planId: planIdSchema,
       },
       outputSchema: {
         errors: z.array(
@@ -470,7 +474,7 @@ function registerRepairTool(server: McpServer, config: LongTermPlanConfig, name:
       description:
         'Attempt a safe, explicit repair of a plan markdown file (e.g., add header, add missing ids).',
       inputSchema: {
-        planId: z.string(),
+        planId: planIdSchema,
         actions: z.array(z.enum(['addFormatHeader', 'addMissingIds'])),
         dryRun: z.boolean().optional(),
         ifMatch: z.string().optional(),
