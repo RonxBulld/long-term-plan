@@ -35,6 +35,34 @@ node dist/ltp.js task next demo
 node dist/cli.js --root . --plans .long-term-plan
 ```
 
+Or run directly from GitHub (no local install / no `git pull`):
+
+```bash
+npx -y --package github:ronxbulld/long-term-plan long-term-plan-mcp --root . --plans .long-term-plan
+```
+
+Example MCP host config:
+
+```json
+{
+  "mcpServers": {
+    "long-term-plan": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "--package",
+        "github:ronxbulld/long-term-plan",
+        "long-term-plan-mcp",
+        "--root",
+        ".",
+        "--plans",
+        ".long-term-plan"
+      ]
+    }
+  }
+}
+```
+
 ## long-term-plan-md v1 (Markdown Conventions)
 
 Files must include a format header:
