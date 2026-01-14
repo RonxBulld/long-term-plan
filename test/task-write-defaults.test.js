@@ -11,8 +11,8 @@ import { createMcpServer } from '../dist/server.js';
  * This is where an agent can easily make mistakes if the server is permissive.
  * We want strict, predictable selection rules:
  * - if there is exactly one `doing` task, it is the default target
- * - otherwise, if there is exactly one unfinished task, it is the default target
- * - ambiguous cases must throw (never guess)
+ * - otherwise, the default target is the first unfinished task (top-to-bottom order)
+ * - ambiguous cases must throw (never guess), currently only when multiple `doing` tasks exist
  *
  * Because default targeting is a write, it must be gated behind:
  * - `allowDefaultTarget: true` (explicit caller intent)
@@ -248,6 +248,48 @@ test('task.update rejects default targeting when multiple doing tasks exist', as
       }),
       /AMBIGUOUS/
     );
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test('task.update can default taskId to first unfinished task when no doing task exists', async () => {
+  const rootDir = await mkdtemp(join(process.cwd(), '.tmp-long-term-plan-'));
+  try {
+    await writePlan(
+      rootDir,
+      'demo',
+      [
+        '<!-- long-term-plan:format=v1 -->',
+        '',
+        '# Demo Plan',
+        '',
+        '## Inbox',
+        '',
+        '- [√] Done first <!-- long-term-plan:id=t_done -->',
+        '- [ ] Task A <!-- long-term-plan:id=t_a -->',
+        '- [ ] Task B <!-- long-term-plan:id=t_b -->',
+        '',
+      ].join('\n')
+    );
+
+    const server = createMcpServer({ rootDir, plansDir: '.long-term-plan' });
+    const getPlan = getTool(server, 'plan.get');
+    const update = getTool(server, 'task.update');
+
+    const etag = (await getPlan.handler({ planId: 'demo' })).structuredContent.etag;
+    const result = await update.handler({
+      planId: 'demo',
+      status: 'doing',
+      allowDefaultTarget: true,
+      ifMatch: etag,
+    });
+
+    assert.equal(result.structuredContent.taskId, 't_a');
+
+    const planPath = join(rootDir, '.long-term-plan', 'demo.md');
+    const text = await readFile(planPath, 'utf8');
+    assert.ok(text.includes('- [*] Task A <!-- long-term-plan:id=t_a -->'));
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }
