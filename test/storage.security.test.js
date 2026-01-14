@@ -5,7 +5,7 @@
  * never allow escaping the configured `rootDir`.
  */
 import assert from 'node:assert/strict';
-import { resolve } from 'node:path';
+import { resolve, sep } from 'node:path';
 import test from 'node:test';
 
 import { assertSafeId, resolvePlanPath, resolvePlansDir } from '../dist/todo/storage.js';
@@ -31,7 +31,7 @@ test('assertSafeId rejects invalid ids', () => {
 test('resolvePlansDir rejects paths that escape rootDir', () => {
   const rootDir = resolve('.tmp-root');
   assert.throws(
-    () => resolvePlansDir({ rootDir, plansDir: '../escape' }),
+    () => resolvePlansDir({ rootDir, plansDir: `..${sep}escape` }),
     /escapes rootDir/
   );
 });
@@ -43,7 +43,7 @@ test('resolvePlanPath rejects invalid plan ids and root escapes', () => {
     /Invalid planId/
   );
   assert.throws(
-    () => resolvePlanPath({ rootDir, plansDir: '../escape' }, 'demo'),
+    () => resolvePlanPath({ rootDir, plansDir: `..${sep}escape` }, 'demo'),
     /escapes rootDir/
   );
 });

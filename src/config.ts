@@ -4,7 +4,11 @@ import { DEFAULT_PLANS_DIR } from './todo/constants.js';
 /**
  * Runtime configuration for locating and managing plan markdown files.
  *
- * `rootDir` is treated as a trust boundary: plan paths must resolve within it.
+ * `rootDir` is treated as a lexical boundary for path traversal guards: plan
+ * paths must not escape it via `..` segments.
+ *
+ * Note: symlinks inside `rootDir` may still point outside; this is intentionally
+ * allowed for workflows that keep plans elsewhere.
  */
 export interface LongTermPlanConfig {
   rootDir: string;
