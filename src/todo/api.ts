@@ -22,6 +22,7 @@ import {
   resolvePlansDir,
   sha256Hex,
   writeFileAtomic,
+  writeFileAtomicExclusive,
 } from './storage.js';
 import { buildTaskTreeView, toTaskFlatRow } from './view.js';
 
@@ -171,7 +172,13 @@ export async function listPlans(
     }
 
     const absolutePath = resolvePlanPath(config, planId);
-    const text = await readFile(absolutePath, 'utf8');
+    let text: string;
+    try {
+      text = await readFile(absolutePath, 'utf8');
+    } catch {
+      // Best-effort: a single unreadable plan file should not break `plan.list`.
+      continue;
+    }
     const title = extractTitleFromText(text) ?? planId;
     const stats = computeStats(text);
     const path = relative(config.rootDir, absolutePath);
@@ -262,14 +269,6 @@ export async function createPlan(
   const plansDir = resolvePlansDir(config);
   await mkdir(plansDir, { recursive: true });
 
-  try {
-    await access(absolutePath);
-    throw new Error(`Plan already exists: ${planId}`);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException | undefined)?.code;
-    if (code !== 'ENOENT') throw error;
-  }
-
   const title = options.title.trim() || planId;
   const template = options.template ?? 'basic';
   const parts: string[] = [LONG_TERM_PLAN_FORMAT_HEADER, '', `# ${title}`, ''];
@@ -281,7 +280,15 @@ export async function createPlan(
   if (options.bodyMarkdown !== undefined) {
     text = applySetPlanBody(text, options.bodyMarkdown).newText;
   }
-  await writeFileAtomic(absolutePath, text);
+  try {
+    await writeFileAtomicExclusive(absolutePath, text);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code === 'EEXIST' || code === 'EISDIR') {
+      throw new Error(`Plan already exists: ${planId}`);
+    }
+    throw error;
+  }
 
   return { planId, path: relative(config.rootDir, absolutePath) };
 }
