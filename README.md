@@ -16,6 +16,7 @@ npm run skill:sync # sync skill lib agent-skill/long-term-plan/scripts/lib/
 Optional: copy the versioned skill(s) into your user skill directory:
 
 ```bash
+npm run deploy # both (Codex + Claude)
 npm run deploy:codex
 npm run deploy:claude
 ```

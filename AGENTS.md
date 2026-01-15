@@ -7,6 +7,7 @@ This repository contains `long-term-plan-mcp`, an MCP stdio server for managing 
 - `npm test` (build + run Node.js tests)
 - `npm run build` (TypeScript compile to `dist/`)
 - `npm run skill:sync` (build + distribute to `<PROJECT_ROOT>/agent-skill/long-term-plan/scripts/lib/`)
+- `npm run deploy` (copy skills to both `~/.codex/skills/` and `~/.claude/skills/`)
 - `npm run deploy:codex` (copy skills to `~/.codex/skills/`)
 - `npm run deploy:claude` (copy skills to `~/.claude/skills/`)
 - `npm run start` (run `dist/cli.js`)
@@ -21,7 +22,9 @@ This repository contains `long-term-plan-mcp`, an MCP stdio server for managing 
 ## Tool conventions
 
 - Always pass `planId` to `plan.*` / `task.*` / `doc.*` tool calls (no implicit default plan).
+- When choosing a task to execute, avoid relying on keyword-only `task.search` / `ltp task search` (title-only substring match, limited hit list); prefer `task.get` (by id/default) and/or `plan.get` to browse.
 - Prefer minimal diffs when editing Markdown tasks: update only the status box or the title region, without reformatting/reordering.
+- In skill docs, keep CLI examples using `./long-term-plan/scripts/ltp` (after deployment, there may be no `agent-skill/` directory).
 - When changing code or docs, check implementation↔docs consistency (including `agent-skill/long-term-plan/**`).
 
 ## Code size limit

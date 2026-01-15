@@ -9,13 +9,14 @@ Use this skill to keep long-term plan edits consistent, safe, and low-noise.
 
 ## Quick start
 
-- Run: `./agent-skill/long-term-plan/scripts/ltp --help`
-- Optional: `export PATH="$PWD/agent-skill/long-term-plan/scripts:$PATH"`
+- Run: `./long-term-plan/scripts/ltp --help`
+- Optional: `export PATH="$PWD/long-term-plan/scripts:$PATH"`
 - Prefer CLI for local edits; prefer server mode when a host needs tool calls.
 
 ## Rules
 
 - Prefer tool-driven edits (CLI/server) over manual Markdown edits.
+- When choosing a task to execute, avoid keyword-only `task search` (title-only substring match, limited hit list); prefer `task get` (by id/default) and/or `plan get` to browse.
 - Keep task ids stable (never hand-edit `long-term-plan:id=...`).
 - Use only the allowed status markers: `[ ]` (todo), `[*]` (doing), `[√]` (done).
 - Indent subtasks by 2 spaces per level.
