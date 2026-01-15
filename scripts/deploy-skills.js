@@ -42,6 +42,9 @@ function usage() {
     '  --dry-run          Print actions without writing',
     '  --help             Show this help',
     '',
+    'Notes:',
+    '  - With --target both, existing skill directories are skipped unless --force is set.',
+    '',
   ].join('\n');
 }
 
@@ -122,11 +125,16 @@ async function listSkillDirs(rootDir) {
   return entries.filter((e) => e.isDirectory()).map((e) => e.name).sort();
 }
 
-async function copySkillDir(fromDir, toDir, { dryRun, force }) {
+async function copySkillDir(fromDir, toDir, { dryRun, force, skipExisting }) {
   // Safety: overwrite is opt-in.
   // Rationale: user-level skill dirs are shared state across projects.
   if (await pathExists(toDir)) {
     if (!force) {
+      if (skipExisting) {
+        logLine(`${dryRun ? '[dry-run] ' : ''}skip existing: ${toDir} (use --force to overwrite)`);
+        return false;
+      }
+
       throw new Error(`Destination exists: ${toDir} (use --force to overwrite)`);
     }
     if (dryRun) {
@@ -139,9 +147,10 @@ async function copySkillDir(fromDir, toDir, { dryRun, force }) {
 
   if (dryRun) {
     logLine(`[dry-run] cp -R ${fromDir} ${toDir}`);
-    return;
+    return true;
   }
   await cp(fromDir, toDir, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true });
+  return true;
 }
 
 async function makeShebangFilesExecutable(dirPath, { dryRun }) {
@@ -181,7 +190,7 @@ function defaultDestRootForTarget(target) {
   throw new Error(`Unknown target: ${target}`);
 }
 
-async function deployToRoot({ destRoot, skillNames, dryRun, force }) {
+async function deployToRoot({ destRoot, skillNames, dryRun, force, skipExisting }) {
   // `destRoot/<skillName>/...` mirrors the in-repo `agent-skill/<skillName>/...`.
   logLine(`${dryRun ? '[dry-run] ' : ''}deploy -> ${destRoot}`);
   await ensureDir(destRoot, { dryRun });
@@ -194,7 +203,8 @@ async function deployToRoot({ destRoot, skillNames, dryRun, force }) {
       throw new Error(`Missing skill source: ${fromDir}`);
     }
 
-    await copySkillDir(fromDir, toDir, { dryRun, force });
+    const copied = await copySkillDir(fromDir, toDir, { dryRun, force, skipExisting });
+    if (!copied) continue;
     await makeShebangFilesExecutable(toDir, { dryRun });
   }
 }
@@ -234,9 +244,11 @@ async function main() {
             throw new Error(`Invalid --target: ${options.target}`);
           })();
 
+  const skipExisting = options.target === 'both';
+
   for (const target of targets) {
     const destRoot = options.destRoot ?? defaultDestRootForTarget(target);
-    await deployToRoot({ destRoot, skillNames, dryRun: options.dryRun, force: options.force });
+    await deployToRoot({ destRoot, skillNames, dryRun: options.dryRun, force: options.force, skipExisting });
   }
 }
 

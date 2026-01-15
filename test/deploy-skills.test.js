@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 
@@ -29,6 +29,10 @@ async function createTempHome() {
   };
 }
 
+// Run the deploy script in a subprocess (instead of importing its functions)
+// so the tests reflect real CLI behavior, including stdout/stderr messages.
+// Captures output for assertions and keeps the test process isolated from any
+// accidental global side effects.
 function runNode(args, { env }) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, args, {
@@ -87,6 +91,50 @@ test('deploy-skills: copies to codex root and enforces --force', async () => {
 
     const forced = await runNode(['scripts/deploy-skills.js', '--target', 'codex', '--force'], { env });
     assert.equal(forced.code, 0, `expected exit code 0 (stderr=${forced.stderr})`);
+  } finally {
+    await cleanup();
+  }
+});
+
+/**
+ * Multi-target deploy should install into both Codex and Claude roots, so a
+ * single `--target both` invocation is enough for most local setups.
+ */
+test('deploy-skills: --target both copies to codex + claude roots', async () => {
+  const { homeDir, cleanup } = await createTempHome();
+  try {
+    const env = { ...process.env, HOME: homeDir, USERPROFILE: homeDir };
+    const result = await runNode(['scripts/deploy-skills.js', '--target', 'both'], { env });
+    assert.equal(result.code, 0, `expected exit code 0 (stderr=${result.stderr})`);
+
+    assert.equal(await pathExists(join(homeDir, '.codex', 'skills', 'long-term-plan', 'SKILL.md')), true);
+    assert.equal(await pathExists(join(homeDir, '.claude', 'skills', 'long-term-plan', 'SKILL.md')), true);
+  } finally {
+    await cleanup();
+  }
+});
+
+/**
+ * When deploying to both targets, an already-installed directory should not
+ * block installing into the other target (users commonly have one configured
+ * before the other).
+ */
+test('deploy-skills: --target both skips existing and still installs missing target', async () => {
+  const { homeDir, cleanup } = await createTempHome();
+  try {
+    const env = { ...process.env, HOME: homeDir, USERPROFILE: homeDir };
+    const codexSkillDir = join(homeDir, '.codex', 'skills', 'long-term-plan');
+    await mkdir(codexSkillDir, { recursive: true });
+    await writeFile(join(codexSkillDir, 'PREEXISTING'), 'keep', 'utf8');
+
+    const result = await runNode(['scripts/deploy-skills.js', '--target', 'both'], { env });
+    assert.equal(result.code, 0, `expected exit code 0 (stderr=${result.stderr})`);
+    assert.match(result.stdout, /skip existing:/);
+
+    assert.equal(await pathExists(join(codexSkillDir, 'PREEXISTING')), true);
+    assert.equal(await pathExists(join(codexSkillDir, 'SKILL.md')), false);
+
+    assert.equal(await pathExists(join(homeDir, '.claude', 'skills', 'long-term-plan', 'SKILL.md')), true);
   } finally {
     await cleanup();
   }
