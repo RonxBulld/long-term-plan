@@ -33,6 +33,10 @@ test('listPlans skips unreadable plan files', async (t) => {
     t.skip('chmod-based unreadable file test is unix-only');
     return;
   }
+  if (typeof process.getuid === 'function' && process.getuid() === 0) {
+    t.skip('chmod-based unreadable file test is unreliable when running as root');
+    return;
+  }
 
   const { rootDir, cleanup } = await createTempRoot();
   try {
