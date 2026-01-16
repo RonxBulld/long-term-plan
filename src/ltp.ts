@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * `ltp` - local CLI for long-term-plan Markdown plans.
+ * `long-term-plan` - local CLI for long-term-plan Markdown plans.
  *
  * This CLI is a first-class interface alongside the stdio server. Both share
  * the same core plan/task API so behavior stays in sync.
@@ -52,30 +52,30 @@ export interface LtpIo {
  */
 function helpText(defaultRoot: string): string {
   return [
-    'ltp — long-term plan CLI (structured Markdown)',
+    'long-term-plan — long-term plan CLI (structured Markdown)',
     '',
     'Usage:',
-    '  ltp [--root <dir>] [--plans <dir>] <cmd>',
+    '  long-term-plan [--root <dir>] [--plans <dir>] <cmd>',
     '',
     'Plan:',
-    '  ltp plan list [--query <text>]',
-    '  ltp plan get <planId> [--view tree|flat]',
-    '  ltp plan create <planId> --title <text> [--template empty|basic]',
-    '  ltp plan update <planId> [--title <text>] [--body <text>|--body-stdin|--body-file <path>|--clear-body] [--if-match <etag>]',
+    '  long-term-plan plan list [--query <text>]',
+    '  long-term-plan plan get <planId> [--view tree|flat]',
+    '  long-term-plan plan create <planId> --title <text> [--template empty|basic]',
+    '  long-term-plan plan update <planId> [--title <text>] [--body <text>|--body-stdin|--body-file <path>|--clear-body] [--if-match <etag>]',
     '',
     'Task:',
-    '  ltp task get <planId> [taskId]',
-    '  ltp task next <planId>',
-    '  ltp task add <planId> --title <text> [--status todo|doing|done] [--body <text>|--body-stdin|--body-file <path>] [--section A/B] [--parent <taskId>] [--before <taskId>] [--if-match <etag>]',
-    '  ltp task update <planId> [taskId] [--status todo|doing|done] [--title <text>] [--body <text>|--body-stdin|--body-file <path>|--clear-body] [--allow-default] [--if-match <etag>]',
-    '  ltp task start <planId> <taskId>',
-    '  ltp task done <planId> <taskId>',
-    '  ltp task delete <planId> <taskId> [--if-match <etag>]',
-    '  ltp task search <planId> --query <text> [--status todo|doing|done] [--limit <n>]',
+    '  long-term-plan task get <planId> [taskId]',
+    '  long-term-plan task next <planId>',
+    '  long-term-plan task add <planId> --title <text> [--status todo|doing|done] [--body <text>|--body-stdin|--body-file <path>] [--section A/B] [--parent <taskId>] [--before <taskId>] [--if-match <etag>]',
+    '  long-term-plan task update <planId> [taskId] [--status todo|doing|done] [--title <text>] [--body <text>|--body-stdin|--body-file <path>|--clear-body] [--allow-default] [--if-match <etag>]',
+    '  long-term-plan task start <planId> <taskId>',
+    '  long-term-plan task done <planId> <taskId>',
+    '  long-term-plan task delete <planId> <taskId> [--if-match <etag>]',
+    '  long-term-plan task search <planId> --query <text> [--status todo|doing|done] [--limit <n>]',
     '',
     'Doc:',
-    '  ltp doc validate <planId>',
-    '  ltp doc repair <planId> --actions addFormatHeader,addMissingIds [--dry-run] [--if-match <etag>]',
+    '  long-term-plan doc validate <planId>',
+    '  long-term-plan doc repair <planId> --actions addFormatHeader,addMissingIds [--dry-run] [--if-match <etag>]',
     '',
     'Notes:',
     `  Defaults: --root=${defaultRoot} --plans=${DEFAULT_PLANS_DIR}`,
@@ -258,7 +258,7 @@ function takeCliConfig(argv: string[], defaultRoot: string): CliConfig {
 }
 
 /**
- * Execute `ltp plan ...` commands.
+ * Execute `long-term-plan plan ...` commands.
  */
 async function handlePlanCommand(
   config: CliConfig,
@@ -309,7 +309,7 @@ async function handlePlanCommand(
 }
 
 /**
- * Execute `ltp task ...` commands.
+ * Execute `long-term-plan task ...` commands.
  */
 async function handleTaskCommand(
   config: CliConfig,
@@ -425,7 +425,7 @@ async function handleTaskCommand(
 }
 
 /**
- * Execute `ltp doc ...` commands.
+ * Execute `long-term-plan doc ...` commands.
  */
 async function handleDocCommand(config: CliConfig, argv: string[], io: LtpIo): Promise<number> {
   const sub = argv.shift();

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Alias wrapper to avoid PATH collisions with other `ltp` binaries.
+# Alias wrapper to avoid PATH collisions with other binaries.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 exec node "${SCRIPT_DIR}/lib/ltp.js" "$@"
-
