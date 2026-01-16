@@ -10,6 +10,7 @@ Use this skill to keep long-term plan edits consistent, safe, and low-noise.
 ## Quick start
 
 - Run: `./long-term-plan/scripts/ltp --help`
+- If `ltp` conflicts with another binary on your system, use: `./long-term-plan/scripts/long-term-plan` (same CLI).
 - Optional: `export PATH="$PWD/long-term-plan/scripts:$PATH"`
 - Prefer CLI for local edits; prefer server mode when a host needs tool calls.
 

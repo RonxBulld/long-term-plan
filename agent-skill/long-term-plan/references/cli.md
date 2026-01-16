@@ -18,6 +18,8 @@ ID rules:
 
 - Run: `./agent-skill/long-term-plan/scripts/ltp --help`
 - Optional: `export PATH="$PWD/agent-skill/long-term-plan/scripts:$PATH"`
+- If `ltp` conflicts with another binary, use the bundled alias command name: `long-term-plan` (same CLI).
+  - Example (no global export, and avoids overriding any existing `ltp`): `PATH="$PATH:$PWD/agent-skill/long-term-plan/scripts" long-term-plan --help`
 
 Common scenarios:
 
