@@ -89,8 +89,13 @@ test('deploy-skills: copies to codex root and enforces --force', async () => {
     assert.equal(noForce.code, 1, 'expected non-zero exit when destination exists');
     assert.match(noForce.stderr, /Destination exists:/);
 
+    // Force deploy should start from a clean directory so old files can't linger.
+    await writeFile(join(destSkillDir, 'OLD_FILE'), 'stale', 'utf8');
+    assert.equal(await pathExists(join(destSkillDir, 'OLD_FILE')), true);
+
     const forced = await runNode(['scripts/deploy-skills.js', '--target', 'codex', '--force'], { env });
     assert.equal(forced.code, 0, `expected exit code 0 (stderr=${forced.stderr})`);
+    assert.equal(await pathExists(join(destSkillDir, 'OLD_FILE')), false);
   } finally {
     await cleanup();
   }

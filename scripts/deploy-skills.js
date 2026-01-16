@@ -1,5 +1,5 @@
 import { writeSync } from 'node:fs';
-import { chmod, cp, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { chmod, cp, lstat, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -44,6 +44,7 @@ function usage() {
     '',
     'Notes:',
     '  - With --target both, existing skill directories are skipped unless --force is set.',
+    '  - With --force, the destination skill directory is deleted before copying (clean reinstall).',
     '',
   ].join('\n');
 }
@@ -105,9 +106,10 @@ function parseArgs(argv) {
 }
 
 async function pathExists(path) {
-  // `fs.stat` is enough here; we don't need to distinguish file vs directory.
+  // Use `lstat` so broken symlinks still count as "exists" (important for --force
+  // reinstall, where we want to remove whatever is at the destination path).
   try {
-    await stat(path);
+    await lstat(path);
     return true;
   } catch {
     return false;
@@ -128,15 +130,19 @@ async function listSkillDirs(rootDir) {
 async function copySkillDir(fromDir, toDir, { dryRun, force, skipExisting }) {
   // Safety: overwrite is opt-in.
   // Rationale: user-level skill dirs are shared state across projects.
-  if (await pathExists(toDir)) {
-    if (!force) {
-      if (skipExisting) {
-        logLine(`${dryRun ? '[dry-run] ' : ''}skip existing: ${toDir} (use --force to overwrite)`);
-        return false;
-      }
-
-      throw new Error(`Destination exists: ${toDir} (use --force to overwrite)`);
+  const destExists = await pathExists(toDir);
+  if (destExists && !force) {
+    if (skipExisting) {
+      logLine(`${dryRun ? '[dry-run] ' : ''}skip existing: ${toDir} (use --force to overwrite)`);
+      return false;
     }
+
+    throw new Error(`Destination exists: ${toDir} (use --force to overwrite)`);
+  }
+
+  if (force) {
+    // Force reinstall should start from a clean directory so removed/renamed files
+    // from previous deployments can't linger and confuse consumers.
     if (dryRun) {
       logLine(`[dry-run] rm -rf ${toDir}`);
     }
