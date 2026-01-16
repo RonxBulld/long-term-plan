@@ -254,7 +254,7 @@ export function parsePlanMarkdown(text) {
                 lineIndex = body.endLineExclusive - 1;
             }
             if (tasksById.has(task.id)) {
-                errors.push(errorDiagnostic('DUPLICATE_TASK_ID', `Duplicate task id: ${task.id}`, lineIndex));
+                errors.push(errorDiagnostic('DUPLICATE_TASK_ID', `Duplicate task id: ${task.id}`, task.line));
             }
             else {
                 tasksById.set(task.id, task);

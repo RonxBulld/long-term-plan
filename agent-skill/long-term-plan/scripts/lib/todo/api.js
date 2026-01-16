@@ -5,7 +5,7 @@ import { applyAddTask, applyDelete, applyRename, applySetPlanBody, applySetPlanT
 import { validatePlanMarkdown } from './validate.js';
 import { repairPlanMarkdown } from './repair.js';
 import { LONG_TERM_PLAN_FORMAT_HEADER } from './constants.js';
-import { assertSafeId, readPlanFile, resolvePlanPath, resolvePlansDir, sha256Hex, writeFileAtomic, } from './storage.js';
+import { assertSafeId, readPlanFile, resolvePlanPath, resolvePlansDir, sha256Hex, writeFileAtomic, writeFileAtomicExclusive, } from './storage.js';
 import { buildTaskTreeView, toTaskFlatRow } from './view.js';
 /**
  * Normalize a search query for case-insensitive matching.
@@ -113,7 +113,14 @@ export async function listPlans(config, options) {
             continue;
         }
         const absolutePath = resolvePlanPath(config, planId);
-        const text = await readFile(absolutePath, 'utf8');
+        let text;
+        try {
+            text = await readFile(absolutePath, 'utf8');
+        }
+        catch {
+            // Best-effort: a single unreadable plan file should not break `plan.list`.
+            continue;
+        }
         const title = extractTitleFromText(text) ?? planId;
         const stats = computeStats(text);
         const path = relative(config.rootDir, absolutePath);
@@ -172,15 +179,6 @@ export async function createPlan(config, options) {
     const absolutePath = resolvePlanPath(config, planId);
     const plansDir = resolvePlansDir(config);
     await mkdir(plansDir, { recursive: true });
-    try {
-        await access(absolutePath);
-        throw new Error(`Plan already exists: ${planId}`);
-    }
-    catch (error) {
-        const code = error?.code;
-        if (code !== 'ENOENT')
-            throw error;
-    }
     const title = options.title.trim() || planId;
     const template = options.template ?? 'basic';
     const parts = [LONG_TERM_PLAN_FORMAT_HEADER, '', `# ${title}`, ''];
@@ -191,7 +189,16 @@ export async function createPlan(config, options) {
     if (options.bodyMarkdown !== undefined) {
         text = applySetPlanBody(text, options.bodyMarkdown).newText;
     }
-    await writeFileAtomic(absolutePath, text);
+    try {
+        await writeFileAtomicExclusive(absolutePath, text);
+    }
+    catch (error) {
+        const code = error?.code;
+        if (code === 'EEXIST' || code === 'EISDIR') {
+            throw new Error(`Plan already exists: ${planId}`);
+        }
+        throw error;
+    }
     return { planId, path: relative(config.rootDir, absolutePath) };
 }
 /**
