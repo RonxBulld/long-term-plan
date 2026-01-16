@@ -17,6 +17,7 @@ Use this skill to keep long-term plan edits consistent, safe, and low-noise.
 
 - Prefer tool-driven edits (CLI/server) over manual Markdown edits.
 - When choosing a task to execute, avoid keyword-only `task search` (title-only substring match, limited hit list); prefer `task get` (by id/default) and/or `plan get` to browse.
+- Do **not** try to create tasks by putting `- [ ] ...` lists into `--body`. `--body` is unstructured notes for a plan/task; checklists inside it are not parsed as long-term-plan tasks and will not get task ids. Create real tasks via `ltp task add <planId> --title "..."` / `task.add(planId, ...)` (and use `--parent <taskId>` for subtasks).
 - Keep task ids stable (never hand-edit `long-term-plan:id=...`).
 - Use only the allowed status markers: `[ ]` (todo), `[*]` (doing), `[√]` (done).
 - Indent subtasks by 2 spaces per level.

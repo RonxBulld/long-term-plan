@@ -129,7 +129,7 @@ Use `etag` + `--if-match` for optimistic concurrency on write commands that supp
 
 ````bash
 ltp task update demo t_xxx --body-stdin <<'EOF'
-- [ ] checklist inside body
+- checklist item inside body (NOTE: not a long-term-plan task; it won't get a task id)
 
 ```ts
 const x = 1
