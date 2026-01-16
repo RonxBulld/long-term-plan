@@ -19,6 +19,9 @@ Optional: copy the versioned skill(s) into your user skill directory:
 npm run deploy # both (Codex + Claude)
 npm run deploy:codex
 npm run deploy:claude
+
+# Overwrite existing deployed skill directories (note the `--` passthrough):
+npm run deploy -- --force
 ```
 
 ### CLI (`ltp`)
