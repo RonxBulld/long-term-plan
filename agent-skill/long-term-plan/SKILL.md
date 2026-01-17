@@ -11,6 +11,7 @@ Use this skill to keep long-term plan edits consistent, safe, and low-noise.
 
 - Use the bundled CLI wrapper script located at `scripts/long-term-plan` within this skill's directory.
 - Execute from the skill base path: `./scripts/long-term-plan --help`.
+- Full path form: `<skills-root>/long-term-plan/scripts/long-term-plan`.
 - Optional: add the skill's scripts directory to your `PATH` (from the skill base path): `export PATH="$PWD/scripts:$PATH"`.
 - Prefer CLI for local edits; prefer server mode when a host needs tool calls.
 
