@@ -140,7 +140,7 @@ To minimize merge conflicts and large diffs, the write strategy follows:
 2) `.long-term-plan/config.json`
 3) Defaults: `root=process.cwd()`, `plansDir=.long-term-plan`
 
-### 5.3 Local CLI (`ltp`)
+### 5.3 Local CLI (`long-term-plan`)
 
 - Provide a normal command-line interface for plan/task CRUD (no host required).
 - Output JSON to stdout (friendly to scripts and `jq`).

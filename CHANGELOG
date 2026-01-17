@@ -1,0 +1,7 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## Unreleased
+
+- Rename the `ltp` CLI to `long-term-plan` and remove `ltp` references across docs/tests/skills.

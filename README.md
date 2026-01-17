@@ -2,7 +2,7 @@
 
 A structured Markdown todo plan manager for “dozens to thousands” of tasks, with two first-class interfaces:
 
-- `ltp`: a local CLI for plan/task CRUD
+- `long-term-plan`: a local CLI for plan/task CRUD
 - `long-term-plan-mcp`: a stdio server exposing plan/task tools to an MCP host
 
 ## Quick Start (Local)
@@ -24,13 +24,13 @@ npm run deploy:claude
 npm run deploy -- --force
 ```
 
-### CLI (`ltp`)
+### CLI (`long-term-plan`)
 
 ```bash
-node dist/ltp.js plan list
-node dist/ltp.js plan create demo --title "Demo Plan" --template basic
-node dist/ltp.js task add demo --title "Write docs"
-node dist/ltp.js task next demo
+node dist/long-term-plan.js plan list
+node dist/long-term-plan.js plan create demo --title "Demo Plan" --template basic
+node dist/long-term-plan.js task add demo --title "Write docs"
+node dist/long-term-plan.js task next demo
 ```
 
 ### Stdio server (`long-term-plan-mcp`)

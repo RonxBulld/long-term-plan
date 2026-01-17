@@ -12,7 +12,7 @@ dist/
 .long-term-plan/*.tmp.*
 .tmp/
 .tmp-long-term-plan-*
-.tmp-ltp-smoke-*
+.tmp-long-term-plan-smoke-*
 .tmp-symlink-*
 
 # Local agent config (skills live in `agent-skill/`)
