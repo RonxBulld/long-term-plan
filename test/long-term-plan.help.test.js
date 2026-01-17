@@ -1,5 +1,5 @@
 /**
- * ltp help text tests.
+ * long-term-plan help text tests.
  *
  * Goal: keep CLI help stable and ensure important notes are documented.
  * This is used as a contract for both humans and automated agents.
@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Writable } from 'node:stream';
 
-import { runLtpCli } from '../dist/ltp.js';
+import { runLongTermPlanCli } from '../dist/long-term-plan.js';
 
 function createCapturedIo() {
   let stdoutText = '';
@@ -37,9 +37,9 @@ function createCapturedIo() {
   };
 }
 
-test('ltp --help documents --body-file as relative to cwd', async () => {
+test('long-term-plan --help documents --body-file as relative to cwd', async () => {
   const captured = createCapturedIo();
-  const code = await runLtpCli(['--help'], captured.io);
+  const code = await runLongTermPlanCli(['--help'], captured.io);
   assert.equal(code, 0);
   assert.equal(captured.getStderr().trim(), '');
 

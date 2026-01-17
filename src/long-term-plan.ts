@@ -40,7 +40,7 @@ type CliConfig = {
   plansDir: string;
 };
 
-export interface LtpIo {
+export interface CliIo {
   stdout: NodeJS.WritableStream;
   stderr: NodeJS.WritableStream;
 }
@@ -90,7 +90,7 @@ function helpText(defaultRoot: string): string {
  *
  * This is used both for explicit `--help` and for error fallback.
  */
-function writeHelp(io: LtpIo, defaultRoot: string): void {
+function writeHelp(io: CliIo, defaultRoot: string): void {
   io.stdout.write(helpText(defaultRoot));
 }
 
@@ -99,7 +99,7 @@ function writeHelp(io: LtpIo, defaultRoot: string): void {
  *
  * The CLI prints structured JSON on stdout and reserves stderr for errors.
  */
-function writeJson(io: LtpIo, value: unknown): void {
+function writeJson(io: CliIo, value: unknown): void {
   io.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
@@ -263,7 +263,7 @@ function takeCliConfig(argv: string[], defaultRoot: string): CliConfig {
 async function handlePlanCommand(
   config: CliConfig,
   argv: string[],
-  io: LtpIo,
+  io: CliIo,
   defaultRoot: string
 ): Promise<number> {
   const sub = argv.shift();
@@ -314,7 +314,7 @@ async function handlePlanCommand(
 async function handleTaskCommand(
   config: CliConfig,
   argv: string[],
-  io: LtpIo,
+  io: CliIo,
   defaultRoot: string
 ): Promise<number> {
   const sub = argv.shift();
@@ -427,7 +427,7 @@ async function handleTaskCommand(
 /**
  * Execute `long-term-plan doc ...` commands.
  */
-async function handleDocCommand(config: CliConfig, argv: string[], io: LtpIo): Promise<number> {
+async function handleDocCommand(config: CliConfig, argv: string[], io: CliIo): Promise<number> {
   const sub = argv.shift();
 
   if (sub === 'validate') {
@@ -462,9 +462,9 @@ async function handleDocCommand(config: CliConfig, argv: string[], io: LtpIo): P
  * Returns an exit code, but does not call `process.exit()`. This keeps the CLI
  * testable without relying on spawning child processes.
  */
-export async function runLtpCli(
+export async function runLongTermPlanCli(
   args: string[],
-  io: LtpIo = { stdout: process.stdout, stderr: process.stderr }
+  io: CliIo = { stdout: process.stdout, stderr: process.stderr }
 ): Promise<number> {
   const argv = [...args];
   const defaultRoot = process.cwd();
@@ -505,6 +505,6 @@ export async function runLtpCli(
 
 const isMain = resolvePath(process.argv[1] ?? '') === fileURLToPath(import.meta.url);
 if (isMain) {
-  const exitCode = await runLtpCli(process.argv.slice(2));
+  const exitCode = await runLongTermPlanCli(process.argv.slice(2));
   if (exitCode !== 0) process.exitCode = exitCode;
 }

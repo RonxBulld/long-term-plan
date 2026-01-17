@@ -5,7 +5,7 @@
   "type": "module",
   "bin": {
     "long-term-plan-mcp": "dist/cli.js",
-    "ltp": "dist/ltp.js"
+    "long-term-plan": "dist/long-term-plan.js"
   },
   "scripts": {
     "clean": "node scripts/clean.js",

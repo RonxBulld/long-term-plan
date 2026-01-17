@@ -1,8 +1,36 @@
 /**
  * CLI end-to-end tests.
  *
- * These tests intentionally exercise the compiled `dist/` output to match the
- * real shipped JS, but avoid child processes so output capture is reliable.
+ * Scope:
+ * - Exercise the local CLI through real plan/task lifecycles (create/read/write).
+ * - Ensure the CLI and the MCP server operate on the same underlying plan files.
+ *
+ * Design notes (why this file looks the way it does):
+ * - We intentionally import from the compiled `dist/` output to match shipped JS.
+ * - We avoid spawning a child process for the CLI so output capture is reliable
+ *   and platform differences (shell quoting, PATH resolution) do not add noise.
+ * - We capture stdout/stderr via Writable streams so we can assert on JSON output
+ *   without relying on global `process.stdout` monkeypatching.
+ * - Each test writes into a unique temp root under this repo; this keeps runs
+ *   hermetic and avoids touching any user state outside the workspace.
+ *
+ * Regression targets:
+ * - Argument parsing and help behavior (`--help`, unknown flags, missing args).
+ * - Root/plan-dir isolation (no writes outside `--root`).
+ * - JSON contract stability (stdout JSON, stderr errors + usage).
+ * - Optimistic concurrency control via `etag` / `--if-match`.
+ *
+ * Test harness details:
+ * - `createTempRoot()` allocates a unique `--root` directory per test run.
+ * - `createCapturedIo()` provides in-memory stdout/stderr sinks so the CLI can
+ *   be called as a pure function (argv in, exit code + captured output out).
+ * - `runCliJson()` asserts exit code 0, empty stderr, and parses stdout as JSON.
+ * - `runCliFail()` captures non-zero exit codes and returns raw stderr/stdout.
+ *
+ * Server integration detail:
+ * - The MCP server is connected via an in-memory transport pair so we can call
+ *   tools without networking and still exercise the real server implementation.
+ * - This also keeps the tests deterministic and fast.
  */
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -13,7 +41,7 @@ import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../dist/server.js';
-import { runLtpCli } from '../dist/ltp.js';
+import { runLongTermPlanCli } from '../dist/long-term-plan.js';
 
 async function createTempRoot() {
   const rootDir = await mkdtemp(join(process.cwd(), '.tmp-long-term-plan-'));
@@ -50,17 +78,17 @@ function createCapturedIo() {
   };
 }
 
-async function runLtpJson(args) {
+async function runCliJson(args) {
   const captured = createCapturedIo();
-  const code = await runLtpCli(args, captured.io);
+  const code = await runLongTermPlanCli(args, captured.io);
   assert.equal(code, 0, `expected exit code 0, got ${code} (stderr=${captured.getStderr()})`);
   assert.equal(captured.getStderr().trim(), '');
   return JSON.parse(captured.getStdout());
 }
 
-async function runLtpFail(args) {
+async function runCliFail(args) {
   const captured = createCapturedIo();
-  const code = await runLtpCli(args, captured.io);
+  const code = await runLongTermPlanCli(args, captured.io);
   return { code, stdout: captured.getStdout(), stderr: captured.getStderr() };
 }
 
@@ -79,10 +107,10 @@ async function callToolOk(client, name, args) {
   return result;
 }
 
-test('ltp CLI: plan + task lifecycle', async () => {
+test('long-term-plan CLI: plan + task lifecycle', async () => {
   const { rootDir, cleanup } = await createTempRoot();
   try {
-    const created = await runLtpJson([
+    const created = await runCliJson([
       '--root',
       rootDir,
       'plan',
@@ -95,12 +123,12 @@ test('ltp CLI: plan + task lifecycle', async () => {
     ]);
     assert.equal(created.planId, 'demo');
 
-    const initial = await runLtpJson(['--root', rootDir, 'plan', 'get', 'demo', '--view', 'flat']);
+    const initial = await runCliJson(['--root', rootDir, 'plan', 'get', 'demo', '--view', 'flat']);
     assert.equal(initial.plan.planId, 'demo');
     const etag0 = initial.etag;
     assert.ok(typeof etag0 === 'string' && etag0.length > 0);
 
-    const added = await runLtpJson([
+    const added = await runCliJson([
       '--root',
       rootDir,
       'task',
@@ -113,13 +141,13 @@ test('ltp CLI: plan + task lifecycle', async () => {
     ]);
     assert.ok(typeof added.taskId === 'string' && added.taskId.startsWith('t_'));
 
-    await runLtpJson(['--root', rootDir, 'task', 'start', 'demo', added.taskId]);
-    const next = await runLtpJson(['--root', rootDir, 'task', 'next', 'demo']);
+    await runCliJson(['--root', rootDir, 'task', 'start', 'demo', added.taskId]);
+    const next = await runCliJson(['--root', rootDir, 'task', 'next', 'demo']);
     assert.equal(next.task.id, added.taskId);
     assert.equal(next.task.status, 'doing');
 
-    await runLtpJson(['--root', rootDir, 'task', 'done', 'demo', added.taskId]);
-    const searched = await runLtpJson([
+    await runCliJson(['--root', rootDir, 'task', 'done', 'demo', added.taskId]);
+    const searched = await runCliJson([
       '--root',
       rootDir,
       'task',
@@ -142,15 +170,15 @@ test('ltp CLI: plan + task lifecycle', async () => {
   }
 });
 
-test('ltp CLI: if-match conflict is surfaced as an error', async () => {
+test('long-term-plan CLI: if-match conflict is surfaced as an error', async () => {
   const { rootDir, cleanup } = await createTempRoot();
   try {
-    await runLtpJson(['--root', rootDir, 'plan', 'create', 'demo', '--title', 'Demo', '--template', 'basic']);
-    const initial = await runLtpJson(['--root', rootDir, 'plan', 'get', 'demo']);
+    await runCliJson(['--root', rootDir, 'plan', 'create', 'demo', '--title', 'Demo', '--template', 'basic']);
+    const initial = await runCliJson(['--root', rootDir, 'plan', 'get', 'demo']);
     const etag0 = initial.etag;
 
-    const added = await runLtpJson(['--root', rootDir, 'task', 'add', 'demo', '--title', 'A']);
-    const failed = await runLtpFail([
+    const added = await runCliJson(['--root', rootDir, 'task', 'add', 'demo', '--title', 'A']);
+    const failed = await runCliFail([
       '--root',
       rootDir,
       'task',
@@ -180,7 +208,7 @@ test('CLI + server tools operate on the same plan files', async () => {
   await client.connect(clientTransport);
 
   try {
-    await runLtpJson(['--root', rootDir, 'plan', 'create', 'demo', '--title', 'Demo', '--template', 'basic']);
+    await runCliJson(['--root', rootDir, 'plan', 'create', 'demo', '--title', 'Demo', '--template', 'basic']);
 
     const get1 = await callToolOk(client, 'plan.get', { planId: 'demo', view: 'flat' });
     assert.equal(get1.structuredContent.plan.planId, 'demo');
@@ -195,10 +223,10 @@ test('CLI + server tools operate on the same plan files', async () => {
     });
     etag = added.structuredContent.etag;
 
-    const next = await runLtpJson(['--root', rootDir, 'task', 'next', 'demo']);
+    const next = await runCliJson(['--root', rootDir, 'task', 'next', 'demo']);
     assert.equal(next.task.title, 'From server');
 
-    const updated = await runLtpJson([
+    const updated = await runCliJson([
       '--root',
       rootDir,
       'task',

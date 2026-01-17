@@ -14,7 +14,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { Writable } from 'node:stream';
 
-import { runLtpCli } from '../dist/ltp.js';
+import { runLongTermPlanCli } from '../dist/long-term-plan.js';
 
 async function createTempDir(prefix) {
   return mkdtemp(join(process.cwd(), prefix));
@@ -45,15 +45,15 @@ function createCapturedIo() {
   };
 }
 
-async function runLtpJson(args) {
+async function runCliJson(args) {
   const captured = createCapturedIo();
-  const code = await runLtpCli(args, captured.io);
+  const code = await runLongTermPlanCli(args, captured.io);
   assert.equal(code, 0, `expected exit code 0, got ${code} (stderr=${captured.getStderr()})`);
   assert.equal(captured.getStderr().trim(), '');
   return JSON.parse(captured.getStdout());
 }
 
-test('ltp plan update --body-file resolves relative to cwd (not --root)', async () => {
+test('long-term-plan plan update --body-file resolves relative to cwd (not --root)', async () => {
   const rootDir = await createTempDir('.tmp-long-term-plan-root-');
   const bodyDir = await createTempDir('.tmp-long-term-plan-bodyfile-');
   try {
@@ -67,8 +67,8 @@ test('ltp plan update --body-file resolves relative to cwd (not --root)', async 
     await mkdir(dirname(shadowPath), { recursive: true });
     await writeFile(shadowPath, 'FROM_ROOT\n', 'utf8');
 
-    await runLtpJson(['--root', rootDir, 'plan', 'create', 'demo', '--title', 'Demo', '--template', 'basic']);
-    await runLtpJson(['--root', rootDir, 'plan', 'update', 'demo', '--body-file', relBodyPath]);
+    await runCliJson(['--root', rootDir, 'plan', 'create', 'demo', '--title', 'Demo', '--template', 'basic']);
+    await runCliJson(['--root', rootDir, 'plan', 'update', 'demo', '--body-file', relBodyPath]);
 
     const planPath = join(rootDir, '.long-term-plan', 'demo.md');
     const planText = await readFile(planPath, 'utf8');
