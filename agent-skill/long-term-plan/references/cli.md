@@ -16,8 +16,9 @@ ID rules:
 
 ## Quick start
 
-- Run the bundled CLI wrapper (at `./long-term-plan/scripts/long-term-plan`) with `--help`.
-- Optional: `export PATH="$PWD/long-term-plan/scripts:$PATH"`
+- Use the bundled CLI wrapper script located at `scripts/long-term-plan` within this skill's directory.
+- Execute from the skill base path: `./scripts/long-term-plan --help`.
+- Optional: add the skill's scripts directory to your `PATH` (from the skill base path): `export PATH="$PWD/scripts:$PATH"`.
 
 Common scenarios:
 
