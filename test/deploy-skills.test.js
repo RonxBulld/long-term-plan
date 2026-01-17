@@ -79,12 +79,10 @@ test('deploy-skills: copies to codex root and enforces --force', async () => {
 
     assert.equal(await pathExists(destSkillDir), true);
     assert.equal(await pathExists(join(destSkillDir, 'SKILL.md')), true);
-    assert.equal(await pathExists(join(destSkillDir, 'scripts', 'lib', 'ltp.js')), true);
+    assert.equal(await pathExists(join(destSkillDir, 'scripts', 'lib', 'long-term-plan.js')), true);
     if (process.platform !== 'win32') {
-      const mode = (await stat(join(destSkillDir, 'scripts', 'ltp'))).mode;
-      assert.ok((mode & 0o111) !== 0, 'expected scripts/ltp to be executable');
-      const aliasMode = (await stat(join(destSkillDir, 'scripts', 'long-term-plan'))).mode;
-      assert.ok((aliasMode & 0o111) !== 0, 'expected scripts/long-term-plan to be executable');
+      const mode = (await stat(join(destSkillDir, 'scripts', 'long-term-plan'))).mode;
+      assert.ok((mode & 0o111) !== 0, 'expected scripts/long-term-plan to be executable');
     }
 
     const noForce = await runNode(['scripts/deploy-skills.js', '--target', 'codex'], { env });

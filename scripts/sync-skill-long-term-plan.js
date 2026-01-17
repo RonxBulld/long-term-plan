@@ -1,17 +1,17 @@
-import { mkdir, readdir, rm, stat, writeFile, copyFile } from 'node:fs/promises';
+import { mkdir, readdir, stat, writeFile, copyFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
 /**
  * Sync the versioned `long-term-plan` skill with the current `dist/` output.
  *
  * Why:
- * - The repo treats both CLI mode (`ltp`) and server mode as first-class.
+ * - The repo treats both CLI mode (`long-term-plan`) and server mode as first-class.
  * - The skill bundles a runnable CLI, so it must stay in lockstep with `dist/`.
  *
  * What this script does:
- * - Copy `dist/ltp.js` to `agent-skill/long-term-plan/scripts/lib/ltp.js`
+ * - Copy `dist/long-term-plan.js` to `agent-skill/long-term-plan/scripts/lib/long-term-plan.js`
  * - Copy `dist/todo/*.js` to `agent-skill/long-term-plan/scripts/lib/todo/*.js`
- * - Update the skill wrapper to run the copied `lib/ltp.js`
+ * - Update the skill wrapper to run the copied `lib/long-term-plan.js`
  */
 
 const DIST_DIR = resolve('dist');
@@ -39,11 +39,11 @@ async function copyFileEnsuringDir(from, to) {
 }
 
 async function main() {
-  const distLtp = join(DIST_DIR, 'ltp.js');
+  const distLongTermPlan = join(DIST_DIR, 'long-term-plan.js');
   const distTodoDir = join(DIST_DIR, 'todo');
 
-  if (!(await pathExists(distLtp))) {
-    throw new Error('Missing dist/ltp.js. Run `npm run build` first.');
+  if (!(await pathExists(distLongTermPlan))) {
+    throw new Error('Missing dist/long-term-plan.js. Run `npm run build` first.');
   }
   if (!(await pathExists(distTodoDir))) {
     throw new Error('Missing dist/todo/. Run `npm run build` first.');
@@ -55,7 +55,7 @@ async function main() {
   await ensureDir(SKILL_TODO_LIB_DIR);
 
   // Copy the CLI entrypoint.
-  await copyFileEnsuringDir(distLtp, join(SKILL_LIB_DIR, 'ltp.js'));
+  await copyFileEnsuringDir(distLongTermPlan, join(SKILL_LIB_DIR, 'long-term-plan.js'));
 
   // Copy runtime todo modules the CLI imports.
   const todoFiles = (await readdir(distTodoDir))
@@ -65,20 +65,16 @@ async function main() {
     await copyFileEnsuringDir(join(distTodoDir, name), join(SKILL_TODO_LIB_DIR, name));
   }
 
-  // Remove the old hand-written skill CLI (kept only before the repo had dist/ltp.js).
-  const legacy = join(SKILL_SCRIPTS_DIR, 'ltp.mjs');
-  if (await pathExists(legacy)) {
-    await rm(legacy, { force: true });
-  }
-
   // Ensure wrapper points at the synced CLI.
-  const wrapperPath = join(SKILL_SCRIPTS_DIR, 'ltp');
+  const wrapperPath = join(SKILL_SCRIPTS_DIR, 'long-term-plan');
   const wrapper = [
     '#!/usr/bin/env bash',
     'set -euo pipefail',
     '',
+    '# Wrapper to run the synced CLI shipped with this skill directory.',
+    '',
     'SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"',
-    'exec node "${SCRIPT_DIR}/lib/ltp.js" "$@"',
+    'exec node "${SCRIPT_DIR}/lib/long-term-plan.js" "$@"',
     '',
   ].join('\n');
   await writeFile(wrapperPath, wrapper, 'utf8');

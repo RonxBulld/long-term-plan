@@ -418,7 +418,7 @@ async function handleDocCommand(config, argv, io) {
  * Returns an exit code, but does not call `process.exit()`. This keeps the CLI
  * testable without relying on spawning child processes.
  */
-export async function runLtpCli(args, io = { stdout: process.stdout, stderr: process.stderr }) {
+export async function runLongTermPlanCli(args, io = { stdout: process.stdout, stderr: process.stderr }) {
     const argv = [...args];
     const defaultRoot = process.cwd();
     try {
@@ -452,8 +452,8 @@ export async function runLtpCli(args, io = { stdout: process.stdout, stderr: pro
 }
 const isMain = resolvePath(process.argv[1] ?? '') === fileURLToPath(import.meta.url);
 if (isMain) {
-    const exitCode = await runLtpCli(process.argv.slice(2));
+    const exitCode = await runLongTermPlanCli(process.argv.slice(2));
     if (exitCode !== 0)
         process.exitCode = exitCode;
 }
-//# sourceMappingURL=ltp.js.map
+//# sourceMappingURL=long-term-plan.js.map
