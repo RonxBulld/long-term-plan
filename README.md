@@ -5,15 +5,17 @@ A structured Markdown todo plan manager for “dozens to thousands” of tasks, 
 - `long-term-plan`: a local CLI for plan/task CRUD
 - `long-term-plan-mcp`: a stdio server exposing plan/task tools to an MCP host
 
+If you are using an agent host that supports Skills (Codex / Claude), the recommended way to use this project is via the included `long-term-plan` Skill (see `agent-skill/long-term-plan/SKILL.md`).
+
 ## Quick Start (Local)
 
 ```bash
 npm install
 npm run build
-npm run skill:sync # sync skill lib agent-skill/long-term-plan/scripts/lib/
+npm run skill:sync # sync the skill library into agent-skill/long-term-plan/scripts/lib/
 ```
 
-Optional: copy the versioned skill(s) into your user skill directory:
+Recommended when using Skills (Codex / Claude): copy the versioned skill(s) into your user skill directory:
 
 ```bash
 npm run deploy # both (Codex + Claude)
