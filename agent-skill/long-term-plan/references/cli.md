@@ -16,7 +16,7 @@ ID rules:
 
 ## Quick start
 
-- Run: `./long-term-plan/scripts/long-term-plan --help`
+- Run the bundled CLI wrapper (at `./long-term-plan/scripts/long-term-plan`) with `--help`.
 - Optional: `export PATH="$PWD/long-term-plan/scripts:$PATH"`
 
 Common scenarios:
